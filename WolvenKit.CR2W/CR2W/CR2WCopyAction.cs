@@ -132,7 +132,7 @@ namespace WolvenKit.CR2W
             {
                 if (chunkTranslation.ContainsKey((int) chunk.ParentChunkId - 1))
                 {
-                    chunk.SetParentChunkId((uint) chunkTranslation[(int) chunk.ParentChunkId - 1] + 1);
+                    chunk.SetParentChunkId(chunkTranslation[chunk.ParentChunkId - 1] + 1);
                 }
                 else if (SourceFile == DestinationFile)
                 {

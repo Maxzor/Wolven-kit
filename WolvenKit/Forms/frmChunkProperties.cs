@@ -443,7 +443,7 @@ namespace WolvenKit
         private void treeView_CellEditFinished(object sender, CellEditEventArgs e)
         {
             if (chunk.ParentPtr.Reference != null)
-                chunk.SetParentChunkId((uint)chunk.ParentPtr.Reference.ChunkIndex + 1);
+                chunk.SetParentChunkId(chunk.ParentPtr.Reference.ChunkIndex + 1);
             OnItemsChanged(sender, e);
 
             // change the model's isserialized property to true when the user edits it,

@@ -34,7 +34,7 @@ namespace WolvenKit.CR2W
 
         [DataMember]
         [FieldOffset(4)]
-        public uint parentID;           //0 means no parent, 1 is chunkID 0 
+        public int parentID;           //0 means no parent, 1 is chunkID 0 
 
         [DataMember]
         [FieldOffset(8)]
@@ -108,13 +108,13 @@ namespace WolvenKit.CR2W
                 // this is unneccessary, handled in frmChunkProperties:treeView_CellEditFinished
                 if (_parentPtr.Reference == null)
                 {
-                    _export.parentID = (uint)0;
+                    _export.parentID = 0;
                 }
                 else
-                    _export.parentID = (uint)_parentPtr.Reference.ChunkIndex + 1;
+                    _export.parentID = _parentPtr.Reference.ChunkIndex + 1;
             }
         }
-        public uint ParentChunkId => this.Export.parentID;
+        public int ParentChunkId => this.Export.parentID;
 
         private string _type;
         public string REDType
@@ -171,11 +171,11 @@ namespace WolvenKit.CR2W
 
         #region Methods
         public void SetType(ushort val) => _export.className = val;
-        public void SetParentChunkId(uint val) => _export.parentID = val;
+        public void SetParentChunkId(int val) => _export.parentID = val;
         public void SetParent(CR2WExportWrapper parent)
         {
             ParentPtr.Reference = parent;
-            SetParentChunkId((uint)ParentPtr.Reference.ChunkIndex + 1);
+            SetParentChunkId(ParentPtr.Reference.ChunkIndex + 1);
         }
         public void SetOffset(uint offset) => _export.dataOffset = offset;
 

@@ -1493,7 +1493,7 @@ namespace WolvenKit.CR2W
             chunk.CreateDefaultData();
             if (parent != null)
             {
-                chunk.SetParentChunkId((uint)chunks.IndexOf(parent) + 1);
+                chunk.SetParentChunkId(chunks.IndexOf(parent) + 1);
             }
 
             chunks.Add(chunk);
