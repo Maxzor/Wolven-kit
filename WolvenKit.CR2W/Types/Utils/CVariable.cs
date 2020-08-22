@@ -69,7 +69,7 @@ namespace WolvenKit.CR2W.Types
         /// </summary>
         public IEditableVariable Parent { get; private set; }
 
-
+        public int ParentChunkId { get; set; }
 
 
         private string name;

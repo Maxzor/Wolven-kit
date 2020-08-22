@@ -234,7 +234,7 @@ namespace WolvenKit.CR2W
             file.BaseStream.Seek(_export.dataOffset, SeekOrigin.Begin);
 
             CreateDefaultData();
-
+            data.ParentChunkId = ChunkIndex;
             data.Read(file, _export.dataSize);
 
             // Unknown bytes
