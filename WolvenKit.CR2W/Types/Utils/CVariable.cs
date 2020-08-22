@@ -27,6 +27,7 @@ namespace WolvenKit.CR2W.Types
             this.cr2w = cr2w;
             this.Parent = parent;
             this.REDName = name;
+            this.ParentChunkId = -1;
 
             InternalGuid = Guid.NewGuid();
             accessor = TypeAccessor.Create(this.GetType());
@@ -131,6 +132,15 @@ namespace WolvenKit.CR2W.Types
             return name;
         }
 
+        public int GetParentChunkId()
+        {
+            var currentcvar = this as IEditableVariable;
+            while (currentcvar.ParentChunkId == -1)
+            {
+                currentcvar = currentcvar.Parent as IEditableVariable;
+            }
+            return currentcvar.ParentChunkId;
+        }
 
         #region Virtual
 

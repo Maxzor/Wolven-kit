@@ -114,7 +114,11 @@ namespace WolvenKit.CR2W
                     _export.parentID = _parentPtr.Reference.ChunkIndex + 1;
             }
         }
-        public int ParentChunkId => this.Export.parentID;
+        public int ParentChunkId
+        {
+            get => this.Export.parentID;
+            set => throw new NotImplementedException();
+        }
 
         private string _type;
         public string REDType

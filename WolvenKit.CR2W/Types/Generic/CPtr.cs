@@ -65,7 +65,7 @@ namespace WolvenKit.CR2W.Types
                 throw new InvalidPtrException(ex.Message);
             }
 
-            Reference.SetParent(cr2w.chunks[ParentChunkId]);
+            Reference.SetParentChunkId(GetParentChunkId() + 1);
         }
 
         public override void Write(BinaryWriter file)

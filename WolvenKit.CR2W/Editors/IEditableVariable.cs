@@ -18,6 +18,7 @@ namespace WolvenKit.CR2W.Editors
         IEditableVariable Parent { get; }
         bool IsSerialized { get; set; }
 
+        int ParentChunkId { get; set; }
         CR2WFile cr2w { get; set; }
 
 
