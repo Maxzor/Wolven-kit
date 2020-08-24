@@ -1,8 +1,7 @@
 name: WolvenKit-Nightly
 on:
   workflow_dispatch:
-    branches:
-      - master
+
  
 jobs:
   build:
