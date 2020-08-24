@@ -3,11 +3,6 @@ on:
   workflow_dispatch:
     branches:
       - master
-    inputs:
-      dataIch:
-        description: 'data zie'
-        default: true
-        required: true
  
 jobs:
   build:
