@@ -5,7 +5,7 @@ on:
       dataIch:
         description: 'data zie'
         default: true
-        required: false
+        required: true
  
 jobs:
   build:
