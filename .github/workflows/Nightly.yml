@@ -1,7 +1,11 @@
 name: WolvenKit-Nightly
 on:
   workflow_dispatch:
-
+    inputs:
+      dataIch:
+        description: 'data zie'
+        default: true
+        required: false
  
 jobs:
   build:
