@@ -27,8 +27,9 @@ namespace WolvenKit.CR2W.Types
         public CVariable(CR2WFile cr2w, CVariable parent, string name)
         {
             this.cr2w = cr2w;
-            this.Parent = parent;
+            this.ParentVar = parent;
             this.REDName = name;
+            this.VarChunkIndex = -1;
 
             InternalGuid = Guid.NewGuid();
             accessor = TypeAccessor.Create(this.GetType());
@@ -85,9 +86,12 @@ namespace WolvenKit.CR2W.Types
         /// otherwise must be set manually
         /// Consider moving this to the constructor
         /// </summary>
-        public IEditableVariable Parent { get; private set; }
+        public IEditableVariable ParentVar { get; private set; }
 
-
+        /// <summary>
+        /// -1 for children CVars, actual chunk index for root cvar aka cr2wexportwrapper.data
+        /// </summary>
+        public int VarChunkIndex { get; set; }
 
 
         private string name;
@@ -140,15 +144,27 @@ namespace WolvenKit.CR2W.Types
         public string GetFullName()
         {
             var name = REDName;
-            var c = Parent;
+            var c = ParentVar;
             while (c != null)
             {
                 name = c.REDName + "/" + name;
-                c = c.Parent;
+                c = c.ParentVar;
             }
             return name;
         }
 
+        public int GetVarChunkIndex()
+        {
+            var currentcvar = this as IEditableVariable;
+            while (currentcvar.VarChunkIndex == -1)
+            {
+                currentcvar = currentcvar.ParentVar as IEditableVariable;
+            }
+            return currentcvar.VarChunkIndex;
+        }
+#if DEBUG
+        public int GottenVarChunkIndex => GetVarChunkIndex();
+#endif
 
         #region Virtual
 

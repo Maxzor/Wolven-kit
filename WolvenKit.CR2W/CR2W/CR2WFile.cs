@@ -780,13 +780,13 @@ namespace WolvenKit.CR2W
                 {
                     // add parent if not already in guidlist
                     // don't add array type parents, don't add IVariantAccessor type parents
-                    if (cvar.Parent != null
-                        && !cvar.Parent.GetType().IsGenericType
-                        && !(cvar.Parent is IVariantAccessor)
-                        && !(cvar.Parent is SEntityBufferType2)
-                        && !guidlist.Contains(cvar.Parent.InternalGuid))
+                    if (cvar.ParentVar != null
+                        && !cvar.ParentVar.GetType().IsGenericType
+                        && !(cvar.ParentVar is IVariantAccessor)
+                        && !(cvar.ParentVar is SEntityBufferType2)
+                        && !guidlist.Contains(cvar.ParentVar.InternalGuid))
                     {
-                        returnedVariables.Add(new SNameArg(EStringTableMod.None, cvar.Parent));
+                        returnedVariables.Add(new SNameArg(EStringTableMod.None, cvar.ParentVar));
                     }
 
                     // add all normal REDProperties
@@ -1342,7 +1342,7 @@ namespace WolvenKit.CR2W
             chunk.CreateDefaultData();
             if (parent != null)
             {
-                chunk.SetParentChunkId((uint)chunks.IndexOf(parent) + 1);
+                chunk.ParentChunkIndex = chunks.IndexOf(parent);
             }
 
             chunks.Add(chunk);

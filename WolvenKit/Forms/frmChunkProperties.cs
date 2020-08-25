@@ -78,7 +78,7 @@ namespace WolvenKit
                 return;
             }
 
-            var root = AddListViewItems(chunk, showOnlySerialized);
+            var root = AddListViewItems(chunk.data, showOnlySerialized);
 
             treeView.Roots = root.Children;
             //treeView.RefreshObjects(root.Children);
@@ -379,8 +379,8 @@ namespace WolvenKit
 
         private void treeView_CellEditFinished(object sender, CellEditEventArgs e)
         {
-            if (chunk.ParentPtr.Reference != null)
-                chunk.SetParentChunkId((uint)chunk.ParentPtr.Reference.ChunkIndex + 1);
+/*            if (chunk.ParentPtr.Reference != null)
+                chunk.SetParentChunkId(chunk.ParentPtr.Reference.ChunkIndex + 1);*/
             OnItemsChanged(sender, e);
 
             // change the model's isserialized property to true when the user edits it,
