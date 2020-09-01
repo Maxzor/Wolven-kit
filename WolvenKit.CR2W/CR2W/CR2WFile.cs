@@ -1512,6 +1512,8 @@ namespace WolvenKit.CR2W
             return -1;
         }
 
+
+
         public CR2WExportWrapper GetChunkByType(string type)
         {
             for (var i = 0; i < chunks.Count; i++)
@@ -1528,5 +1530,10 @@ namespace WolvenKit.CR2W
             return chunks.Remove(chunk);
         }
         #endregion
+
+        public CR2WFileHeader GetFileHeader() {return m_fileheader;}
+        public CR2WTable[] GetFileTables() { return m_tableheaders; }
+        public Byte[] GetFileStrings() { return m_strings; }
+
     }
 }

@@ -53,4 +53,10 @@ namespace WolvenKit.Console
 
     }
 
+    [Verb("cr2w", HelpText = "Load cr2w content in postgres")]
+    class CR2WToPostgresOptions
+    {
+
+    }
+    
 }

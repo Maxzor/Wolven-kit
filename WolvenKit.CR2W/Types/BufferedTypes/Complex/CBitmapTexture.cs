@@ -12,11 +12,11 @@ namespace WolvenKit.CR2W.Types
     public partial class CBitmapTexture : ITexture
     {
 
-        [REDBuffer] public CUInt32 unk { get; set; }
+        [REDBuffer] public CUInt32 Unk { get; set; }
         [REDBuffer(true)] public CUInt32 MipsCount { get; set; }
 
         [REDBuffer(true)] public CCompressedBuffer<SMipData> Mipdata { get; set; }
-        [REDBuffer(true)] public CUInt32 unk2 { get; set; }
+        [REDBuffer(true)] public CUInt32 Unk2 { get; set; }
         // Uncooked Textures
         [REDBuffer(true)] public CCompressedBuffer<CByteArray> Mips { get; set; }
         // Cooked Textures
@@ -30,7 +30,7 @@ namespace WolvenKit.CR2W.Types
 
             MipsCount = new CUInt32(cr2w, this, nameof(MipsCount));
             Mipdata = new CCompressedBuffer<SMipData>(cr2w, this, nameof(Mipdata));
-            unk2 = new CUInt32(cr2w, this, nameof(unk2));
+            Unk2 = new CUInt32(cr2w, this, nameof(Unk2));
             Mips = new CCompressedBuffer<CByteArray>(cr2w, this, nameof(Mips));
             ResidentmipSize = new CUInt32(cr2w, this, nameof(ResidentmipSize));
             Residentmip = new CBytes(cr2w, this, nameof(Residentmip));
@@ -74,7 +74,7 @@ namespace WolvenKit.CR2W.Types
             }
 
             ResidentmipSize.Read(file, 4);
-            unk2.Read(file, 4);
+            Unk2.Read(file, 4);
             Residentmip.Read(file, ResidentmipSize.val);
         }
 
@@ -97,7 +97,7 @@ namespace WolvenKit.CR2W.Types
 
             Mipdata.Write(file);
             ResidentmipSize.Write(file);
-            unk2.Write(file);
+            Unk2.Write(file);
 
             Residentmip.Write(file);
         }

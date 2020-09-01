@@ -66,6 +66,7 @@ namespace WolvenKit.CR2W.Types
         /// Flags inherited from cr2w export (aka chunk)
         /// 0 means chunk is uncooked (useful for some file types that have 
         /// a different layout in the uncooked and cooked state, e.g. CBitmapTexture)
+        /// 8192 means cooked.
         /// Is set on file read and should not be modified
         /// </summary>
         public ushort Flags { get; set; }

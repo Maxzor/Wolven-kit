@@ -104,7 +104,7 @@ namespace CR2WTests
                 antecedent =>
                 {
                     res = antecedent.Result;
-                    Thread.Sleep(10000);
+                    Thread.Sleep(2000);
                     try
                     {
                         this.Close();
