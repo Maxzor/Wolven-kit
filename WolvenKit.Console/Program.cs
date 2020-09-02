@@ -750,12 +750,6 @@ namespace WolvenKit.Console
 
         private static async Task<int> CR2WToPostgres(CR2WToPostgresOptions options)
         {
-            var connString = "Host=localhost;Username=postgres;Database=wmod";
-
-            System.Console.WriteLine("Connecting to postgres...");
-            NpgsqlConnection conn = new NpgsqlConnection(connString);
-            conn.Open();
-
             //----------------------------------------------------------------------------------
             // I. Setup
             //----------------------------------------------------------------------------------
@@ -764,7 +758,12 @@ namespace WolvenKit.Console
             System.Console.WriteLine("--------------------------------------------");
             System.Console.WriteLine("I. Setup");
             System.Console.WriteLine("--------------------------------------------");
-            System.Console.WriteLine("  1) Populating mappings from db...");
+            var connString = "Host=localhost;Username=postgres;Database=wmod";
+
+            System.Console.WriteLine("  1) Connecting to postgres...");
+            NpgsqlConnection conn = new NpgsqlConnection(connString);
+            conn.Open();
+            System.Console.WriteLine("  2) Populating mappings from db...");
             var lod2dict = new ConcurrentDictionary<string, int>(); // lod2 absolute_path --> lod2_file_id
             var lod1dict = new ConcurrentDictionary<Tuple<int, string>, int>(); // lod2_id + absolute_virtual_path --> lod1_file_id
             var classdict = new ConcurrentDictionary<string, int>(); // class name hash --> class_id
@@ -825,7 +824,7 @@ namespace WolvenKit.Console
 
             // II. Load MemoryMapped Bundles
             //----------------------------------------------------------------------------------
-            System.Console.WriteLine("  2) Loading bundles...");
+            System.Console.WriteLine("  3) Loading bundles...");
             var bm = new BundleManager();
             bm.LoadAll("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64");
 
@@ -859,7 +858,7 @@ namespace WolvenKit.Console
 
             var threadpooldict = new ConcurrentDictionary<int,IConsole>();
 
-            var progressbarwindow = Window.OpenBox("Progress", 140, 5, new BoxStyle()
+            var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
             {
                 ThickNess = LineThickNess.Single,
                 Title = new Colors(Green, Black)
@@ -878,6 +877,7 @@ namespace WolvenKit.Console
                     }
                 }
 
+                BundleItem f = files[i] as BundleItem;
                 // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
                 var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64\\..\\..\\", "").Replace("\\", "/");
                 int lod2_file_id = lod2dict[lod_2_file_name];
@@ -887,7 +887,6 @@ namespace WolvenKit.Console
 
 
 
-                BundleItem f = files[i] as BundleItem;
                 if (f.Name.Split('.').Last() == "buffer")
                 {
                     notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
@@ -895,7 +894,7 @@ namespace WolvenKit.Console
                 }
 
 
-                    var threadid = Thread.CurrentThread.ManagedThreadId;
+                var threadid = Thread.CurrentThread.ManagedThreadId;
 /*                if (!threadpooldict.ContainsKey(threadid))
                 {
                     var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
