@@ -758,7 +758,7 @@ namespace WolvenKit.Console
             System.Console.WriteLine("--------------------------------------------");
             System.Console.WriteLine("I. Setup");
             System.Console.WriteLine("--------------------------------------------");
-            var connString = "Host=localhost;Username=postgres;Database=wmod";
+            var connString = "Host=localhost;Username=postgres;Password=postgrespwd;Database=wmod";
 
             System.Console.WriteLine("  1) Connecting to postgres...");
             NpgsqlConnection conn = new NpgsqlConnection(connString);
@@ -826,7 +826,7 @@ namespace WolvenKit.Console
             //----------------------------------------------------------------------------------
             System.Console.WriteLine("  3) Loading bundles...");
             var bm = new BundleManager();
-            bm.LoadAll("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64");
+            bm.LoadAll("C:\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64");
 
             var memorymappedbundles = new Dictionary<string, MemoryMappedFile>();
             foreach (var b in bm.Bundles.Values)
@@ -866,7 +866,8 @@ namespace WolvenKit.Console
             var pb = new Konsole.ProgressBar((IConsole)progressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)lod1cnt, (int)70);
             var pg  = new Progress(0);
 
-            Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 70 }, i =>
+
+            Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 90 }, i =>
             {
                 lock (pg)
                 {
@@ -879,7 +880,7 @@ namespace WolvenKit.Console
 
                 BundleItem f = files[i] as BundleItem;
                 // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
-                var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64\\..\\..\\", "").Replace("\\", "/");
+                var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64\\..\\..\\", "").Replace("\\", "/");
                 int lod2_file_id = lod2dict[lod_2_file_name];
 
                 // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
@@ -935,7 +936,11 @@ namespace WolvenKit.Console
                             notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
                             return;
                         }
-                        else throw ex;
+                        else
+                        {
+                            System.Console.WriteLine("weird thing at " + f.Name);
+                            throw ex;
+                        }
                     }
                 }
                 var crwfileheader = crw.GetFileHeader();
