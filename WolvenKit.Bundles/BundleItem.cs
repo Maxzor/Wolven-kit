@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using Doboz;
 using Ionic.Zlib;
@@ -56,56 +57,70 @@ namespace WolvenKit.Bundles
         /// <param name="output"></param>
         public void ExtractExistingMMF(Stream output)
         {
-            var hash = Bundle.FileName.GetHashMD5();
-            using (MemoryMappedFile mmf = MemoryMappedFile.OpenExisting(hash, MemoryMappedFileRights.Read))
-            using (var viewstream = mmf.CreateViewStream(PageOffset, ZSize, MemoryMappedFileAccess.Read))
+            try
             {
-                switch (CompressionType)
+                var hash = Bundle.FileName.GetHashMD5();
+                System.Console.WriteLine(hash);
+                using (MemoryMappedFile mmf = MemoryMappedFile.OpenExisting(hash, MemoryMappedFileRights.Read, HandleInheritability.Inheritable))
+                using (var viewstream = mmf.CreateViewStream(PageOffset, ZSize, MemoryMappedFileAccess.Read))
                 {
-                    case "None":
-                        {
-                            viewstream.CopyTo(output);
-                            break;
-                        }
-                    case "Lz4":
-                        {
-                            var buffer = new byte[ZSize];
-                            var c = viewstream.Read(buffer, 0, buffer.Length);
-                            var uncompressed = LZ4Codec.Decode(buffer, 0, c, (int)Size);
-                            output.Write(uncompressed, 0, uncompressed.Length);
-                            break;
-                        }
-                    case "Snappy":
-                        {
-                            var buffer = new byte[ZSize];
-                            var c = viewstream.Read(buffer, 0, buffer.Length);
-                            var uncompressed = SnappyCodec.Uncompress(buffer);
-                            output.Write(uncompressed, 0, uncompressed.Length);
-                            break;
-                        }
-                    case "Doboz":
-                        {
-                            var buffer = new byte[ZSize];
-                            var c = viewstream.Read(buffer, 0, buffer.Length);
-                            var uncompressed = DobozCodec.Decode(buffer, 0, c);
-                            output.Write(uncompressed, 0, uncompressed.Length);
-                            break;
-                        }
-                    case "Zlib":
-                        {
-                            var zlib = new ZlibStream(viewstream, CompressionMode.Decompress);
-                            zlib.CopyTo(output);
-                            break;
-                        }
-                    default:
-                        throw new MissingCompressionException("Unhandled compression algorithm.")
-                        {
-                            Compression = Compression
-                        };
-                }
+                    switch (CompressionType)
+                    {
+                        case "None":
+                            {
+                                viewstream.CopyTo(output);
+                                break;
+                            }
+                        case "Lz4":
+                            {
+                                var buffer = new byte[ZSize];
+                                var c = viewstream.Read(buffer, 0, buffer.Length);
+                                var uncompressed = LZ4Codec.Decode(buffer, 0, c, (int)Size);
+                                output.Write(uncompressed, 0, uncompressed.Length);
+                                break;
+                            }
+                        case "Snappy":
+                            {
+                                var buffer = new byte[ZSize];
+                                var c = viewstream.Read(buffer, 0, buffer.Length);
+                                var uncompressed = SnappyCodec.Uncompress(buffer);
+                                output.Write(uncompressed, 0, uncompressed.Length);
+                                break;
+                            }
+                        case "Doboz":
+                            {
+                                var buffer = new byte[ZSize];
+                                var c = viewstream.Read(buffer, 0, buffer.Length);
+                                var uncompressed = DobozCodec.Decode(buffer, 0, c);
+                                output.Write(uncompressed, 0, uncompressed.Length);
+                                break;
+                            }
+                        case "Zlib":
+                            {
+                                var zlib = new ZlibStream(viewstream, CompressionMode.Decompress);
+                                zlib.CopyTo(output);
+                                break;
+                            }
+                        default:
+                            throw new MissingCompressionException("Unhandled compression algorithm.")
+                            {
+                                Compression = Compression
+                            };
+                    }
 
-                viewstream.Close();
+                    viewstream.Close();
+                }
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine("");
+                Console.WriteLine("");
+                Console.WriteLine("mmf not threadsafe");
+                Console.WriteLine(ex.ToString());
+                throw ex;
+
+            }
+
         }
 
         public void Extract(Stream output)
