@@ -254,7 +254,7 @@ namespace WolvenKit.CR2W
             return (imports, m_hasInternalBuffer, buffers);
         }
 
-        public void Read(BinaryReader file)
+        public int Read(BinaryReader file)
         {
             //m_stream = file.BaseStream;
 
@@ -266,7 +266,8 @@ namespace WolvenKit.CR2W
             // read file header
             var id = file.BaseStream.ReadStruct<uint>();
             if (id != MAGIC)
-                throw new FormatException($"Not a CR2W file, Magic read as 0x{id:X8}");
+                return 1;
+                //throw new FormatException($"Not a CR2W file, Magic read as 0x{id:X8}");
 
             m_fileheader = file.BaseStream.ReadStruct<CR2WFileHeader>();
             if (m_fileheader.version > 163 || m_fileheader.version < 159)
@@ -334,8 +335,10 @@ namespace WolvenKit.CR2W
 
             if (Logger != null) Logger.LogString($"File {FileName} loaded in: {stopwatch1.Elapsed}\n");
             stopwatch1.Stop();
+            //System.Console.WriteLine(Logger.ToString());
 
             //m_stream = null;
+            return 0;
         }
 
         public CR2WFile Read(MemoryMappedFile mmf)

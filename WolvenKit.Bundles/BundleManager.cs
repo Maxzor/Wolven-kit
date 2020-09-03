@@ -19,7 +19,13 @@ namespace WolvenKit.Bundles
             AutocompleteSource = new AutoCompleteStringCollection();
         }
 
+        /// <summary>
+        /// Key : relative internal file path
+        /// </summary>
         public Dictionary<string, List<IWitcherFile>> Items { get; set; }
+        /// <summary>
+        /// Key : absolute external file path
+        /// </summary>
         public Dictionary<string, Bundle> Bundles { get; set; }
         public WitcherTreeNode RootNode { get; set; }
         public List<IWitcherFile> FileList { get; set; }
@@ -77,7 +83,7 @@ namespace WolvenKit.Bundles
                     if (filesInBundles.First().Bundle.FileName.Contains("content0"))
                     {
                         bundle.Patchedfiles.Add(filesInBundles.First());
-                        filesInBundles.RemoveAt(0);
+                        //filesInBundles.RemoveAt(0);
                     }
                 }
                 Items[item.Key].Add(item.Value);

@@ -857,7 +857,6 @@ namespace WolvenKit.Console
             var notcr2wfiles = new ConcurrentBag<Tuple<int,int, string>>(); // lod2 lod1 lod1-name
 
             var threadpooldict = new ConcurrentDictionary<int,IConsole>();
-
             var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
             {
                 ThickNess = LineThickNess.Single,
@@ -867,18 +866,23 @@ namespace WolvenKit.Console
             var pg  = new Progress(0);
 
 
-            Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 90 }, i =>
+
+            try
             {
-                lock (pg)
+                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, i =>
                 {
-                    pg.pgr++;
-                    lock(pb)
-                    {
-                        pb.Refresh(pg.pgr, "oui");
-                    }
-                }
+                /*                    lock (pg)
+                                    {
+                                        pg.pgr++;
+                                        pb.Refresh(pg.pgr, "oui");
+                                    }*/
+                pg.pgr++;
 
                 BundleItem f = files[i] as BundleItem;
+                if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
+                {
+                    var boza = "boza";
+                }
                 // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
                 var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64\\..\\..\\", "").Replace("\\", "/");
                 int lod2_file_id = lod2dict[lod_2_file_name];
@@ -887,34 +891,36 @@ namespace WolvenKit.Console
                 int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
 
 
+                //System.Console.WriteLine("yo");
 
                 if (f.Name.Split('.').Last() == "buffer")
                 {
                     notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
                     return;
                 }
+                //System.Console.WriteLine("ya");
 
 
-                var threadid = Thread.CurrentThread.ManagedThreadId;
-/*                if (!threadpooldict.ContainsKey(threadid))
-                {
-                    var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
-                    {
-                        ThickNess = LineThickNess.Single,
-                        Title = new Colors(White, Black)
-                    });
-                    threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
-                }
+                //var threadid = Thread.CurrentThread.ManagedThreadId;
+                /*                if (!threadpooldict.ContainsKey(threadid))
+                                {
+                                    var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
+                                    {
+                                        ThickNess = LineThickNess.Single,
+                                        Title = new Colors(White, Black)
+                                    });
+                                    threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
+                                }
 
 
-                if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
-                {
-                    lock (threadwindow)
-                    {
-                        threadwindow.WriteLine(new String(' ',140));
-                        threadwindow.Write(f.Name);
-                    }
-                }*/
+                                if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
+                                {
+                                    lock (threadwindow)
+                                    {
+                                        threadwindow.WriteLine(new String(' ',140));
+                                        threadwindow.Write(f.Name);
+                                    }
+                                }*/
 
                 var crw = new CR2WFile();
 
@@ -922,48 +928,74 @@ namespace WolvenKit.Console
                 using (var ms = new MemoryStream())
                 using (var br = new BinaryReader(ms))
                 {
-                    f.ExtractExistingMMF(ms);
-                    ms.Seek(0, SeekOrigin.Begin);
+                    //System.Console.WriteLine("yaa");
 
                     try
                     {
-                        crw.Read(br);
+                        f.ExtractExistingMMF(ms);
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
-                        if (ex is FormatException)
-                        {
-                            notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                            return;
+                            //System.Console.WriteLine("mff reading not thread safe...");
+                            //System.Console.WriteLine(ex.ToString());
+                            throw ex;
                         }
-                        else
+                        ms.Seek(0, SeekOrigin.Begin);
+                        //System.Console.WriteLine("ye");
+
+                        try
+                        {
+                            if (crw.Read(br) == 1)
+                            {
+                                notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                                return;
+                            }
+                        }
+                        catch (Exception ex)
                         {
                             System.Console.WriteLine("weird thing at " + f.Name);
+                            System.Console.WriteLine(ex.ToString());
                             throw ex;
                         }
                     }
+                    //System.Console.WriteLine("yi");
+                    var crwfileheader = crw.GetFileHeader();
+                    // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
+                    fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
+                        crwfileheader.flags + ", " + crwfileheader.timeStamp + ", " + crwfileheader.buildVersion + ", " +
+                        crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
+                        crwfileheader.numChunks + ")");
+
+                    // Name - block 2 - col1 
+                    /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
+                                        {
+                                            int file_id = 0;
+                                            //int lod2_file_id;
+                                            //int lod1_file_id=lod1dict[f.Name];
+                                            int name_id;
+                                            string name;
+                                            int hash;
+                                            nameinsertbuffer.Add(file_id.ToString());
+                                        }*/
+
+
+                });
+            }
+            catch (AggregateException ae)
+            {
+                var ignoredExceptions = new List<Exception>();
+                // This is where you can choose which exceptions to handle.
+                foreach (var ex in ae.Flatten().InnerExceptions)
+                {
+                    if (ex is ArgumentException)
+                        System.Console.WriteLine(ex.Message);
+                    else
+                        ignoredExceptions.Add(ex);
                 }
-                var crwfileheader = crw.GetFileHeader();
-                // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
-                fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
-                    crwfileheader.flags + ", " + crwfileheader.timeStamp + ", " + crwfileheader.buildVersion + ", " +
-                    crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
-                    crwfileheader.numChunks + ")");
-
-                // Name - block 2 - col1 
-                /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
-                                    {
-                                        int file_id = 0;
-                                        //int lod2_file_id;
-                                        //int lod1_file_id=lod1dict[f.Name];
-                                        int name_id;
-                                        string name;
-                                        int hash;
-                                        nameinsertbuffer.Add(file_id.ToString());
-                                    }*/
+                if (ignoredExceptions.Count > 0) throw new AggregateException(ignoredExceptions);
+            }
 
 
-            });
             //System.Console.WriteLine("stuff");
         System.Console.WriteLine("\t... insert commands created for " + lod1cnt + " cr2w files.");
         
