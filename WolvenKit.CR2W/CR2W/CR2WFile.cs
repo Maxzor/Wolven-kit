@@ -140,6 +140,11 @@ namespace WolvenKit.CR2W
             return null;
         }
 
+        public CR2WFileHeader GetFileHeader()
+        {
+            return m_fileheader;
+        }
+
         public void CreateVariableEditor(CVariable editvar, EVariableEditorAction action)
         {
             if (EditorController != null)
@@ -254,7 +259,7 @@ namespace WolvenKit.CR2W
             return (imports, m_hasInternalBuffer, buffers);
         }
 
-        public void Read(BinaryReader file)
+        public int Read(BinaryReader file)
         {
             //m_stream = file.BaseStream;
 
@@ -266,7 +271,8 @@ namespace WolvenKit.CR2W
             // read file header
             var id = file.BaseStream.ReadStruct<uint>();
             if (id != MAGIC)
-                throw new FormatException($"Not a CR2W file, Magic read as 0x{id:X8}");
+                return 1;
+                //throw new FormatException($"Not a CR2W file, Magic read as 0x{id:X8}");
 
             m_fileheader = file.BaseStream.ReadStruct<CR2WFileHeader>();
             if (m_fileheader.version > 163 || m_fileheader.version < 159)
@@ -336,165 +342,7 @@ namespace WolvenKit.CR2W
             stopwatch1.Stop();
 
             //m_stream = null;
-        }
-
-        public CR2WFile Read(MemoryMappedFile mmf)
-        {
-            Stopwatch stopwatch1 = new Stopwatch();
-            stopwatch1.Start();
-            long offset = 0;
-
-            #region Magic
-            long curviewstreamsize = MAGIC_SIZE;
-            using (MemoryMappedViewStream viewstream = mmf.CreateViewStream(offset, curviewstreamsize, MemoryMappedFileAccess.Read))
-            {
-                if (Logger != null) Logger.LogProgress(1, "Reading headers...");
-                // read file header
-                var id = viewstream.ReadStruct<uint>();
-                if (id != MAGIC)
-                    throw new FormatException($"Not a CR2W file, Magic read as 0x{id:X8}");
-                offset += curviewstreamsize;
-            }
-            #endregion
-
-            #region FileHeader
-            curviewstreamsize = FILEHEADER_SIZE;
-            using (MemoryMappedViewStream viewstream = mmf.CreateViewStream(offset, curviewstreamsize, MemoryMappedFileAccess.Read))
-            {
-                m_fileheader = viewstream.ReadStruct<CR2WFileHeader>();
-                if (m_fileheader.version > 163 || m_fileheader.version < 159)
-                    throw new FormatException($"Unknown Version {m_fileheader.version}. Supported versions: 159 - 163.");
-
-                offset += curviewstreamsize;
-            }
-            #endregion
-
-            #region Read tableheaders
-            curviewstreamsize = TABLEHEADER_SIZE;
-            using (MemoryMappedViewStream viewstream = mmf.CreateViewStream(offset, curviewstreamsize, MemoryMappedFileAccess.Read))
-            {
-                var dt = new CDateTime(m_fileheader.timeStamp, null, "");
-
-                m_tableheaders = viewstream.ReadStructs<CR2WTable>(10);
-                m_hasInternalBuffer = m_fileheader.bufferSize > m_fileheader.fileSize;
-
-                offset += curviewstreamsize;
-            }
-            #endregion
-
-            #region Read StringsBuffer
-            curviewstreamsize = (long)m_tableheaders[0].itemCount;
-            using (MemoryMappedViewStream viewstream = mmf.CreateViewStream(offset, curviewstreamsize, MemoryMappedFileAccess.Read))
-            {
-                // read strings
-                m_strings = ReadStringsBuffer(viewstream);
-
-                offset += curviewstreamsize;
-            }
-            #endregion
-
-            #region Read tables
-            int totalsize = 0;
-            for (int i = 0; i < 6; i++)
-            {
-                totalsize += ((int)m_tableheaders[i + 1].itemCount * TABLES_SIZES[i]);
-            }
-
-            curviewstreamsize = (long)totalsize;
-            using (MemoryMappedViewStream viewstream = mmf.CreateViewStream(offset, curviewstreamsize, MemoryMappedFileAccess.Read))
-            {
-                // read tables
-                names = ReadTable<CR2WName>(viewstream, 1).Select(_ => new CR2WNameWrapper(_, this)).ToList();
-                imports = ReadTable<CR2WImport>(viewstream, 2).Select(_ => new CR2WImportWrapper(_, this)).ToList();
-                properties = ReadTable<CR2WProperty>(viewstream, 3).Select(_ => new CR2WPropertyWrapper(_)).ToList();
-                chunks = ReadTable<CR2WExport>(viewstream, 4).Select(_ => new CR2WExportWrapper(_, this)).ToList();
-                buffers = ReadTable<CR2WBuffer>(viewstream, 5).Select(_ => new CR2WBufferWrapper(_)).ToList();
-                embedded = ReadTable<CR2WEmbedded>(viewstream, 6).Select(_ => new CR2WEmbeddedWrapper(_)
-                {
-                    ParentFile = this,
-                    ParentImports = imports,
-                    Handle = StringDictionary[_.path],
-                }).ToList();
-
-                offset += curviewstreamsize;
-            }
-            #endregion
-
-            if (Logger != null) Logger.LogProgress(25);
-
-            #region Read Chunks
-            
-
-            var tasks = new List<Task>();
-
-            if (Logger != null) Logger.LogProgress(1, "Reading chunks...");
-            // Read object data //block 5
-            for (int i = 0; i < chunks.Count; i++)
-            {
-                CR2WExportWrapper chunk = chunks[i];
-
-                tasks.Add(Task.Run(() =>
-                chunk.ReadData(mmf)
-                    ))
-                    ;
-            }
-
-
-            Task.WaitAll(tasks.ToArray());
-
-            if (Logger != null) Logger.LogProgress(50);
-            //if (Logger != null) Logger.LogString($"{stopwatch1.Elapsed} CHUNKS\n");
-
-
-            #endregion
-
-
-
-
-            #region Read Buffers
-            // Read buffer data //block 6
-            if (m_hasInternalBuffer)
-            {
-                for (int i = 0; i < buffers.Count; i++)
-                {
-                    CR2WBufferWrapper buffer = buffers[i];
-                    buffer.ReadData(mmf);
-
-                    int percentprogress = (int)((float)i / (float)buffers.Count * 100.0);
-                    if (Logger != null) Logger.LogProgress(percentprogress);
-                }
-            }
-
-            if (Logger != null) Logger.LogProgress(75);
-            //if (Logger != null) Logger.LogString($"{stopwatch1.Elapsed} BUFFERS\n");
-            #endregion
-
-
-
-            #region Read embedded files
-            // Read embedded files //block 7
-            for (int i = 0; i < embedded.Count; i++)
-            {
-                CR2WEmbeddedWrapper emb = embedded[i];
-                emb.ReadData(mmf);
-
-                int percentprogress = (int)((float)i / (float)embedded.Count * 100.0);
-                if (Logger != null) Logger.LogProgress(percentprogress, $"Reading embedded file {emb.ClassName}...");
-            }
-
-            if (Logger != null) Logger.LogProgress(100);
-            //if (Logger != null) Logger.LogString($"{stopwatch1.Elapsed} EMBEDDED\n");
-            #endregion
-
-
-            stopwatch1.Stop();
-
-           
-            if (Logger != null) Logger.LogString($"File {FileName} loaded in: {stopwatch1.Elapsed}\n");
-            stopwatch1.Stop();
-
-
-            return this;
+            return 0;
         }
 
         #endregion

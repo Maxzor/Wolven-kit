@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using static System.ConsoleColor;
 
 /// <summary>
 /// Well, you know, command-line interface (CLI)
@@ -25,6 +26,9 @@ namespace WolvenKit.Console
     using System.Text.RegularExpressions;
     using System.IO.MemoryMappedFiles;
     using WolvenKit.Common.Extensions;
+    using System.Collections.Concurrent;
+    using Konsole;
+    using Npgsql;
 
     public class WolvenKitConsole
     {
@@ -58,7 +62,8 @@ namespace WolvenKit.Console
                 DumpDDSOptions,
                 DumpCollisionOptions,
                 DumpArchivedFileInfosOptions,
-                DumpMetadataStoreOptions>(_args)
+                DumpMetadataStoreOptions,
+                CR2WToPostgresOptions>(_args)
                         .MapResult(
                           async (CacheOptions opts) => await DumpCache(opts),
                           async (BundleOptions opts) => await RunBundle(opts),
@@ -68,6 +73,7 @@ namespace WolvenKit.Console
                           async (DumpArchivedFileInfosOptions opts) => await DumpArchivedFileInfos(opts),
                           async (DumpMetadataStoreOptions opts) => await DumpMetadataStore(opts),
                           async (DumpCollisionOptions opts) => await DumpCollision(opts),
+                          async (CR2WToPostgresOptions opts) => await CR2WToPostgres(opts),
                           //errs => 1,
                           _ => Task.FromResult(1));
         }
@@ -117,7 +123,7 @@ namespace WolvenKit.Console
                     .GroupBy(p => p.Name)
                     .Select(g => g.First())
                     .ToList();
-                using (var pb = new ProgressBar())
+                using (var pb = new ConsoleProgressBar.ProgressBar())
                 using (var p1 = pb.Progress.Fork())
                 {
                     int progress = 0;
@@ -216,7 +222,7 @@ namespace WolvenKit.Console
                     .GroupBy(p => p.Name)
                     .Select(g => g.First())
                     .ToList();
-                using (var pb = new ProgressBar())
+                using (var pb = new ConsoleProgressBar.ProgressBar())
                 using (var p1 = pb.Progress.Fork())
                 {
                     int progress = 0;
@@ -299,7 +305,7 @@ namespace WolvenKit.Console
             string idx = RED.CRC32.Crc32Algorithm.Compute(Encoding.ASCII.GetBytes($"{dt.Year}{dt.Month}{dt.Day}{dt.Hour}{dt.Minute}{dt.Second}")).ToString();
             var outDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "DDSTest", $"ExtractedFiles_{idx}");
 
-            using (var pb = new ProgressBar())
+            using (var pb = new ConsoleProgressBar.ProgressBar())
             {
                 if (!Directory.Exists(outDir))
                     Directory.CreateDirectory(outDir);
@@ -849,6 +855,288 @@ namespace WolvenKit.Console
                 yield return token.ToString();
 
             }
+        }
+
+
+        internal class Progress
+        {
+            public int pgr;
+            public Progress(int val) => pgr = val;
+        }
+
+        private static async Task<int> CR2WToPostgres(CR2WToPostgresOptions options)
+        {
+            //----------------------------------------------------------------------------------
+            // I. Setup
+            //----------------------------------------------------------------------------------
+            // 1) Populating cr2w class mappings from db
+            //----------------------------------------------------------------------------------
+            System.Console.WriteLine("--------------------------------------------");
+            System.Console.WriteLine("I. Setup");
+            System.Console.WriteLine("--------------------------------------------");
+            var connString = "Host=localhost;Username=postgres;Password=postgrespwd;Database=wmod";
+
+            System.Console.WriteLine("  1) Connecting to postgres...");
+            NpgsqlConnection conn = new NpgsqlConnection(connString);
+            conn.Open();
+            System.Console.WriteLine("  2) Populating mappings from db...");
+            var lod2dict = new ConcurrentDictionary<string, int>(); // lod2 absolute_path --> lod2_file_id
+            var lod1dict = new ConcurrentDictionary<Tuple<int, string>, int>(); // lod2_id + absolute_virtual_path --> lod1_file_id
+            var classdict = new ConcurrentDictionary<string, int>(); // class name hash --> class_id
+            var propertydict = new ConcurrentDictionary<Tuple<int, string>, int>(); // class_id + propname --> prop_id
+
+            // lod2dict - lod2 absolute_path --> lod2_file_id
+            uint bundlecnt = 0;
+            var cmd = new NpgsqlCommand("SELECT _absolute_path, lod0_file_id from lod0_file join physical_inode using(physical_inode_id) where archive_type='Bundle'", conn);
+            var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                bundlecnt++;
+                lod2dict.TryAdd(reader.GetString(0), reader.GetInt32(1));
+            }
+            reader.Close();
+            cmd.Dispose();
+            System.Console.WriteLine("\t... " + bundlecnt + "\t\tlod2 files read :\tlod2 dictionary complete.");
+
+            // lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
+            uint lod1cnt = 0;
+            cmd = new NpgsqlCommand("select l01.lod0_file_id, vi._absolute_path, l1.lod1_file_id from lod1_file l1 join virtual_inode vi using(virtual_inode_id) join lod0xlod1_file l01 using(lod1_file_id) join lod0_file l0 using(lod0_file_id) where l0.archive_type='Bundle'", conn);
+            reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                lod1cnt++;
+                lod1dict.TryAdd(new Tuple<int, string>(reader.GetInt32(0), reader.GetString(1)), reader.GetInt32(2));
+            }
+            reader.Close();
+            cmd.Dispose();
+            System.Console.WriteLine("\t... " + lod1cnt + "\tlod1 files read :\tlod1 dictionary complete.");
+
+            // classdict - class name hash --> class_id
+            uint classcnt = 0;
+            cmd = new NpgsqlCommand("select name, class_id from rtti.big_class", conn);
+            reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                classcnt++;
+                classdict.TryAdd(reader.GetString(0), reader.GetInt32(1));
+            }
+            reader.Close();
+            cmd.Dispose();
+            System.Console.WriteLine("\t... " + classcnt + "\tclasses read :\t\tclass dictionary complete.");
+
+            // propertydict - class_id + propname --> prop_id
+            uint propcnt = 0;
+            cmd = new NpgsqlCommand("select class_id, propname, prop_id from rtti.big_class " +
+                "join rtti.big_prop on name=classname", conn);
+            reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                propcnt++;
+                propertydict.TryAdd(new Tuple<int, string>(reader.GetInt32(0), reader.GetString(1)), reader.GetInt32(2));
+            }
+            reader.Close();
+            cmd.Dispose();
+            System.Console.WriteLine("\t... " + propcnt + "\tproperties read :\tproperty dictionary complete.");
+
+            // II. Load MemoryMapped Bundles
+            //----------------------------------------------------------------------------------
+            System.Console.WriteLine("  3) Loading bundles...");
+            var bm = new BundleManager();
+            bm.LoadAll("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64");
+
+            var memorymappedbundles = new Dictionary<string, MemoryMappedFile>();
+            foreach (var b in bm.Bundles.Values)
+            {
+                var e = b.FileName.GetHashMD5();
+                System.Console.WriteLine(e);
+                memorymappedbundles.Add(e, MemoryMappedFile.CreateFromFile(b.FileName, FileMode.Open, e, 0, MemoryMappedFileAccess.Read));
+                System.Console.WriteLine(memorymappedbundles[e].ToString());
+
+            }
+            System.Console.WriteLine("\t... " + bm.Bundles.Count + "\t\tbundles loaded in memory.");
+
+
+            // III. Dumping cr2w to db
+            //----------------------------------------------------------------------------------
+            System.Console.WriteLine("--------------------------------------------");
+            System.Console.WriteLine("II. Dump cr2w to database");
+            System.Console.WriteLine("--------------------------------------------");
+            System.Console.WriteLine("  Creating cr2w insert commands...");
+            List<IWitcherFile> files = bm.Items.SelectMany(_ => _.Value).ToList();
+            var fileinsertbuffer = new ConcurrentBag<string>();
+            var nameinsertbuffer = new ConcurrentBag<string>();
+            var importinsertbuffer = new ConcurrentBag<string>();
+            var propertiesinsertbuffer = new ConcurrentBag<string>();
+            var chunkinsertbuffer = new ConcurrentBag<string>();
+            var bufferinsertbuffer = new ConcurrentBag<string>();
+            var embeddedinsertbuffer = new ConcurrentBag<string>();
+
+            var notcr2wfiles = new ConcurrentBag<Tuple<int, int, string>>(); // lod2 lod1 lod1-name
+
+            var threadpooldict = new ConcurrentDictionary<int, IConsole>();
+            /*var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
+            {
+                ThickNess = LineThickNess.Single,
+                Title = new Colors(Green, Black)
+            });
+            var pb = new Konsole.ProgressBar((IConsole)progressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)lod1cnt, (int)70);*/
+            var pg = new Progress(0);
+
+
+
+            try
+            {
+                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
+                {
+                    lock (pg)
+                    {
+                        pg.pgr++;
+                        //pb.Refresh(pg.pgr, "oui");
+                    }
+
+                    BundleItem f = files[i] as BundleItem;
+                    if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
+                    {
+                        var boza = "boza";
+                    }
+                    // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
+                    var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
+                    int lod2_file_id = lod2dict[lod_2_file_name];
+
+                    // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
+                    int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
+
+
+                    //System.Console.WriteLine("yo");
+
+                    if (f.Name.Split('.').Last() == "buffer")
+                    {
+                        notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                        return;
+                    }
+                    //System.Console.WriteLine("ya");
+
+
+                    //var threadid = Thread.CurrentThread.ManagedThreadId;
+                    /*                if (!threadpooldict.ContainsKey(threadid))
+                                    {
+                                        var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
+                                        {
+                                            ThickNess = LineThickNess.Single,
+                                            Title = new Colors(White, Black)
+                                        });
+                                        threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
+                                    }
+                                    if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
+                                    {
+                                        lock (threadwindow)
+                                        {
+                                            threadwindow.WriteLine(new String(' ',140));
+                                            threadwindow.Write(f.Name);
+                                        }
+                                    }*/
+
+                    var crw = new CR2WFile();
+
+
+                    using (var ms = new MemoryStream())
+                    using (var br = new BinaryReader(ms))
+                    {
+                        //System.Console.WriteLine("yaa");
+
+                        try
+                        {
+                            f.ExtractExistingMMF(ms);
+                        }
+                        catch (Exception ex)
+                        {
+                            //System.Console.WriteLine("mff reading not thread safe...");
+                            //System.Console.WriteLine(ex.ToString());
+                            throw ex;
+                        }
+                        ms.Seek(0, SeekOrigin.Begin);
+                        //System.Console.WriteLine("ye");
+
+                        try
+                        {
+                            if (crw.Read(br) == 1)
+                            {
+                                notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                                return;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Console.WriteLine("weird thing at " + f.Name);
+                            System.Console.WriteLine(ex.ToString());
+                            throw ex;
+                        }
+                    }
+                    //System.Console.WriteLine("yi");
+                    var crwfileheader = crw.GetFileHeader();
+                    // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
+                    fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
+                        crwfileheader.flags + ", " + crwfileheader.timeStamp + ", " + crwfileheader.buildVersion + ", " +
+                        crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
+                        crwfileheader.numChunks + ")");
+
+                    // Name - block 2 - col1 
+                    /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
+                                        {
+                                            int file_id = 0;
+                                            //int lod2_file_id;
+                                            //int lod1_file_id=lod1dict[f.Name];
+                                            int name_id;
+                                            string name;
+                                            int hash;
+                                            nameinsertbuffer.Add(file_id.ToString());
+                                        }*/
+
+
+                });
+            }
+            catch (AggregateException ae)
+            {
+                var ignoredExceptions = new List<Exception>();
+                // This is where you can choose which exceptions to handle.
+                foreach (var ex in ae.Flatten().InnerExceptions)
+                {
+                    if (ex is ArgumentException)
+                        System.Console.WriteLine(ex.Message);
+                    else
+                        ignoredExceptions.Add(ex);
+                }
+                if (ignoredExceptions.Count > 0) throw new AggregateException(ignoredExceptions);
+            }
+
+
+            //System.Console.WriteLine("stuff");
+            System.Console.WriteLine("\t... insert commands created for " + lod1cnt + " cr2w files.");
+
+
+            // Insert some data
+            //when flushing buffer, reencode
+            // Insert file - fileheader
+            string fileinsertcommand = "insert into cr2w.file" +
+                "(file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildvers,filesize,internalbuffersize,crc32,numchunks) values ";
+            var it = fileinsertbuffer.GetEnumerator();
+            for (int j = 0; j < fileinsertbuffer.Count; j++)
+            {
+                fileinsertcommand += Encoding.UTF8.GetString(Encoding.Default.GetBytes(it.Current));
+                it.MoveNext();
+            }
+            System.Console.WriteLine("\t... insert commands compiled for " + lod1cnt + " cr2w files.");
+
+            cmd = new NpgsqlCommand(fileinsertcommand, conn);
+            await cmd.ExecuteNonQueryAsync();
+            System.Console.WriteLine("\t... insert commands executed.");
+
+
+
+
+
+
+            return 1;
         }
     }
 }
