@@ -67,15 +67,15 @@ namespace WolvenKit.CR2W.Types
         {
             
             
-            typename = REDReflection.GetWKitTypeFromREDType(typename);
+            typename = REDReflection.GetWKitBaseTypeFromREDBaseType(typename);
 
             // first try to create instance of type
             #region W3 TYPES 
-            try
-            {
+/*            try
+            {*/
 
 
-                var type = Type.GetType($"WolvenKit.CR2W.Types.{typename}", false);
+                var type = Type.GetType($"WolvenKit.CR2W.Types.{typename}", false, false);
                 // if succesful return as CVariable
                 if (type != null)
                 {
@@ -84,11 +84,11 @@ namespace WolvenKit.CR2W.Types
                     object instance = Activator.CreateInstance(type, cr2w, parentVariable, varname);
                     return instance as CVariable;
                 }
-            }
+/*            }
             catch (System.IO.FileLoadException)
             {
 
-            }
+            }*/
             #endregion
 
             var fullname = typename;

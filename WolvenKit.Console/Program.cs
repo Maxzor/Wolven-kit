@@ -942,31 +942,11 @@ namespace WolvenKit.Console
 
             // II. Load MemoryMapped Bundles
             //----------------------------------------------------------------------------------
-            System.Console.WriteLine("  3) Loading bundles...");
+            System.Console.WriteLine("  3) Initializing bundles...");
             var bm = new BundleManager();
             bm.LoadAll("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64");
 
-            var memorymappedbundles = new Dictionary<string, MemoryMappedFile>();
-            foreach (var b in bm.Bundles.Values)
-            {
-                var e = /*@"Global\" + */b.FileName.GetHashMD5();
-                var security = new MemoryMappedFileSecurity();
-                /*security.AddAccessRule(new AccessRule<MemoryMappedFileRights>(new SecurityIdentifier(WellKnownSidType.WorldSid, null), MemoryMappedFileRights.FullControl, AccessControlType.Allow));*/
-                //TODO Don't rewrite if just open!
-                var mmf = MemoryMappedFile.CreateNew(e,b.GetSize, MemoryMappedFileAccess.ReadWrite/*, MemoryMappedFileOptions.DelayAllocatePages, security, HandleInheritability.Inheritable*/);
-                //var mmf = MemoryMappedFile.CreateFromFile(b.FileName, FileMode.Open, e, 0, MemoryMappedFileAccess.Read);
-                //System.Console.WriteLine(e);
-                using (FileStream fs = File.OpenRead(b.FileName))
-                using (var br = new BinaryReader(fs))
-                using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
-                {
-                    fs.CopyTo(mmvs);
-                }
-                memorymappedbundles.Add(e, mmf);
-                //System.Console.WriteLine(memorymappedbundles[e].ToString());
-                break;
-            }
-            System.Console.WriteLine("\t... " + bm.Bundles.Count + "\t\tbundles loaded in memory.");
+            System.Console.WriteLine("\t... " + bm.Bundles.Count + "\t\tdone.");
 
 
             // III. Dumping cr2w to db
@@ -975,7 +955,7 @@ namespace WolvenKit.Console
             System.Console.WriteLine("II. Dump cr2w to database");
             System.Console.WriteLine("--------------------------------------------");
             System.Console.WriteLine("  Creating cr2w insert commands...");
-            var bundles = bm.Bundles;
+            var bundles = bm.Bundles.Values.ToList();
             List<IWitcherFile> files = bm.Items.SelectMany(_ => _.Value).ToList();
             var fileinsertbuffer = new ConcurrentBag<string>();
             var nameinsertbuffer = new ConcurrentBag<string>();
@@ -988,143 +968,110 @@ namespace WolvenKit.Console
             var notcr2wfiles = new ConcurrentBag<Tuple<int, int, string>>(); // lod2 lod1 lod1-name
 
             var threadpooldict = new ConcurrentDictionary<int, IConsole>();
-            var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
+            var totalprogressbarwindow = Window.OpenBox("Total Progress", 110, 5, new BoxStyle()
             {
                 ThickNess = LineThickNess.Single,
                 Title = new Colors(Green, Black)
             });
-            var pb = new Konsole.ProgressBar((IConsole)progressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)/*lod1cnt*/ bundles/*[mmfedbundle.Key]*/.ToList().First().Value.Items.Count(), (int)70);
+            var pb = new Konsole.ProgressBar((IConsole)totalprogressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)bm.Bundles.Count(), (int)70);
             var pg = new Progress(0);
 
-
-            foreach( var mmfedbundle in memorymappedbundles)
+            var bundleprogressbarwindow = Window.OpenBox("Bundle Progress", 110, 5, new BoxStyle()
             {
-                var zisbundle = bundles/*[mmfedbundle.Key]*/.ToList().First().Value;
-                try
+                ThickNess = LineThickNess.Single,
+                Title = new Colors(Green, Black)
+            });
+            var bundlepb = new Konsole.ProgressBar((IConsole)bundleprogressbarwindow, (PbStyle)PbStyle.DoubleLine, 100, (int)70);
+
+            foreach (var bundle in bundles)
+            {
+                pb.Refresh(++pg.pgr, bundle.FileName);
+
+                bundlepb.Max = (int)bundle.Items.Count();
+                var bundlepg = new Progress(0);
+
+                var e = bundle.FileName.GetHashMD5();
+                var mmf = MemoryMappedFile.CreateNew(e, bundle.GetSize, MemoryMappedFileAccess.ReadWrite);
+                using (FileStream fs = File.OpenRead(bundle.FileName))
+                using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
+                    fs.CopyTo(mmvs);
+
+                Parallel.For(0, bundle.Items.Count, new ParallelOptions { MaxDegreeOfParallelism = 20 }, i =>
                 {
-                    Parallel.For(0, 9000/*zisbundle.Items.Count*/, new ParallelOptions { MaxDegreeOfParallelism = 20 }, i =>
+                    BundleItem f = bundle.Items.ToList()[i].Value;
+                    lock (bundlepg)
+                        if (bundlepg.pgr++ % 10 == 9)
+                            bundlepb.Refresh(bundlepg.pgr, f.Name);
+
+                    if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
                     {
-                        lock (pg)
+                        System.Console.WriteLine("Not bothering with patched files");
+                        return;
+                    }
+
+                    // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
+                    var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
+                    int lod2_file_id = lod2dict[lod_2_file_name];
+
+                    // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
+                    int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
+
+
+                    //System.Console.WriteLine("yo");
+
+                    if (f.Name.Split('.').Last() == "buffer")
+                    {
+                        notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                        return;
+                    }
+                    //System.Console.WriteLine("ya");
+                    var crw = new CR2WFile();
+
+
+                    using (var ms = new MemoryStream())
+                    using (var br = new BinaryReader(ms))
+                    {
+                        f.ExtractExistingMMF(ms, mmf);
+                        ms.Seek(0, SeekOrigin.Begin);
+
+                        try
                         {
-                            if(pg.pgr++%10==9)
-                                pb.Refresh(pg.pgr,"");
+                            if (crw.Read(br) == 1)
+                            {
+                                notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                                return;
+                            }
                         }
-
-                        var zisbundleitem = zisbundle.Items.ToList()[i].Value;
-                        BundleItem f = zisbundleitem;
-                        if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
+                        catch (Exception ex)
                         {
-                            var boza = "boza";
+                            System.Console.WriteLine("weird thing at " + f.Name);
+                            System.Console.WriteLine(ex.ToString());
+                            throw ex;
                         }
-                        // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
-                        var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
-                        int lod2_file_id = lod2dict[lod_2_file_name];
+                    }
+                    //System.Console.WriteLine("yi");
+                    var crwfileheader = crw.GetFileHeader();
+                    // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
+                    fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
+                        crwfileheader.flags + ", \'" + crwfileheader.timeStamp + "\', " + crwfileheader.buildVersion + ", " +
+                        crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
+                        crwfileheader.numChunks + ")");
 
-                        // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
-                        int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
-
-
-                        //System.Console.WriteLine("yo");
-
-                        if (f.Name.Split('.').Last() == "buffer")
-                        {
-                            notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                            return;
-                        }
-                        //System.Console.WriteLine("ya");
-
-
-                        //var threadid = Thread.CurrentThread.ManagedThreadId;
-                        /*                if (!threadpooldict.ContainsKey(threadid))
+                    // Name - block 2 - col1 
+                    /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
                                         {
-                                            var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
-                                            {
-                                                ThickNess = LineThickNess.Single,
-                                                Title = new Colors(White, Black)
-                                            });
-                                            threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
-                                        }
-                                        if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
-                                        {
-                                            lock (threadwindow)
-                                            {
-                                                threadwindow.WriteLine(new String(' ',140));
-                                                threadwindow.Write(f.Name);
-                                            }
+                                            int file_id = 0;
+                                            //int lod2_file_id;
+                                            //int lod1_file_id=lod1dict[f.Name];
+                                            int name_id;
+                                            string name;
+                                            int hash;
+                                            nameinsertbuffer.Add(file_id.ToString());
                                         }*/
 
-                        var crw = new CR2WFile();
 
-
-                        using (var ms = new MemoryStream())
-                        using (var br = new BinaryReader(ms))
-                        {
-                            //System.Console.WriteLine("yaa");
-
-                            try
-                            {
-                                f.ExtractExistingMMF(ms, mmfedbundle.Value);
-                            }
-                            catch (Exception ex)
-                            {
-                                //System.Console.WriteLine("mff reading not thread safe...");
-                                //System.Console.WriteLine(ex.ToString());
-                                throw ex;
-                            }
-                            ms.Seek(0, SeekOrigin.Begin);
-                            //System.Console.WriteLine("ye");
-
-                            try
-                            {
-                                if (crw.Read(br) == 1)
-                                {
-                                    notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                                    return;
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Console.WriteLine("weird thing at " + f.Name);
-                                System.Console.WriteLine(ex.ToString());
-                                throw ex;
-                            }
-                        }
-                        //System.Console.WriteLine("yi");
-                        var crwfileheader = crw.GetFileHeader();
-                        // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
-                        fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
-                            crwfileheader.flags + ", \'" + crwfileheader.timeStamp + "\', " + crwfileheader.buildVersion + ", " +
-                            crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
-                            crwfileheader.numChunks + ")");
-
-                        // Name - block 2 - col1 
-                        /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
-                                            {
-                                                int file_id = 0;
-                                                //int lod2_file_id;
-                                                //int lod1_file_id=lod1dict[f.Name];
-                                                int name_id;
-                                                string name;
-                                                int hash;
-                                                nameinsertbuffer.Add(file_id.ToString());
-                                            }*/
-
-
-                    });
-                }
-                catch (AggregateException ae)
-                {
-                    var ignoredExceptions = new List<Exception>();
-                    // This is where you can choose which exceptions to handle.
-                    foreach (var ex in ae.Flatten().InnerExceptions)
-                    {
-                        if (ex is ArgumentException)
-                            System.Console.WriteLine(ex.Message);
-                        else
-                            ignoredExceptions.Add(ex);
-                    }
-                    if (ignoredExceptions.Count > 0) throw new AggregateException(ignoredExceptions);
-                }
+                });
+                mmf.Dispose();
             }
 
 
