@@ -55,14 +55,14 @@ namespace WolvenKit.Bundles
         /// decompress with the proper algorithm.
         /// </summary>
         /// <param name="output"></param>
-        public void ExtractExistingMMF(Stream output)
+        public void ExtractExistingMMF(Stream output, MemoryMappedFile memorymappedbundle = null)
         {
             try
             {
-                var hash = Bundle.FileName.GetHashMD5();
+/*                var hash = *//*@"Global\" + *//*Bundle.FileName.GetHashMD5();
                 System.Console.WriteLine(hash);
                 using (MemoryMappedFile mmf = MemoryMappedFile.OpenExisting(hash, MemoryMappedFileRights.Read, HandleInheritability.Inheritable))
-                using (var viewstream = mmf.CreateViewStream(PageOffset, ZSize, MemoryMappedFileAccess.Read))
+*/                using (var viewstream = memorymappedbundle.CreateViewStream(PageOffset, ZSize, MemoryMappedFileAccess.Read))
                 {
                     switch (CompressionType)
                     {

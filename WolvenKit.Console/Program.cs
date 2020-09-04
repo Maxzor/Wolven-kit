@@ -29,6 +29,8 @@ namespace WolvenKit.Console
     using System.Collections.Concurrent;
     using Konsole;
     using Npgsql;
+    using System.Security.AccessControl;
+    using System.Security.Principal;
 
     public class WolvenKitConsole
     {
@@ -947,11 +949,23 @@ namespace WolvenKit.Console
             var memorymappedbundles = new Dictionary<string, MemoryMappedFile>();
             foreach (var b in bm.Bundles.Values)
             {
-                var e = b.FileName.GetHashMD5();
-                System.Console.WriteLine(e);
-                memorymappedbundles.Add(e, MemoryMappedFile.CreateFromFile(b.FileName, FileMode.Open, e, 0, MemoryMappedFileAccess.Read));
-                System.Console.WriteLine(memorymappedbundles[e].ToString());
-
+                var e = /*@"Global\" + */b.FileName.GetHashMD5();
+                var security = new MemoryMappedFileSecurity();
+                /*security.AddAccessRule(new AccessRule<MemoryMappedFileRights>(new SecurityIdentifier(WellKnownSidType.WorldSid, null), MemoryMappedFileRights.FullControl, AccessControlType.Allow));*/
+                //TODO Don't rewrite if just open!
+                var mmf = MemoryMappedFile.CreateOrOpen(e,b.GetSize, MemoryMappedFileAccess.ReadWrite/*, MemoryMappedFileOptions.DelayAllocatePages, security, HandleInheritability.Inheritable*/);
+                //var mmf = MemoryMappedFile.CreateFromFile(b.FileName, FileMode.Open, e, 0, MemoryMappedFileAccess.Read);
+                //System.Console.WriteLine(e);
+                using (FileStream fs = File.OpenRead(b.FileName))
+                using (var br = new BinaryReader(fs))
+                using (MemoryMappedViewAccessor accessor = mmf.CreateViewAccessor(0, b.GetSize))
+                    {
+                        for (int i = 0; i < b.GetSize; i++)
+                            accessor.Write(i, br.ReadByte());
+                    }
+                memorymappedbundles.Add(e, mmf);
+                //System.Console.WriteLine(memorymappedbundles[e].ToString());
+                break;
             }
             System.Console.WriteLine("\t... " + bm.Bundles.Count + "\t\tbundles loaded in memory.");
 
@@ -962,6 +976,7 @@ namespace WolvenKit.Console
             System.Console.WriteLine("II. Dump cr2w to database");
             System.Console.WriteLine("--------------------------------------------");
             System.Console.WriteLine("  Creating cr2w insert commands...");
+            var bundles = bm.Bundles;
             List<IWitcherFile> files = bm.Items.SelectMany(_ => _.Value).ToList();
             var fileinsertbuffer = new ConcurrentBag<string>();
             var nameinsertbuffer = new ConcurrentBag<string>();
@@ -974,139 +989,143 @@ namespace WolvenKit.Console
             var notcr2wfiles = new ConcurrentBag<Tuple<int, int, string>>(); // lod2 lod1 lod1-name
 
             var threadpooldict = new ConcurrentDictionary<int, IConsole>();
-            /*var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
+            var progressbarwindow = Window.OpenBox("Progress", 110, 5, new BoxStyle()
             {
                 ThickNess = LineThickNess.Single,
                 Title = new Colors(Green, Black)
             });
-            var pb = new Konsole.ProgressBar((IConsole)progressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)lod1cnt, (int)70);*/
+            var pb = new Konsole.ProgressBar((IConsole)progressbarwindow, (PbStyle)PbStyle.DoubleLine, (int)/*lod1cnt*/ bundles/*[mmfedbundle.Key]*/.ToList().First().Value.Items.Count(), (int)70);
             var pg = new Progress(0);
 
 
-
-            try
+            foreach( var mmfedbundle in memorymappedbundles)
             {
-                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
+                var zisbundle = bundles/*[mmfedbundle.Key]*/.ToList().First().Value;
+                try
                 {
-                    lock (pg)
+                    Parallel.For(0, 9000/*zisbundle.Items.Count*/, new ParallelOptions { MaxDegreeOfParallelism = 14 }, i =>
                     {
-                        pg.pgr++;
-                        //pb.Refresh(pg.pgr, "oui");
-                    }
+                        lock (pg)
+                        {
+                            if(pg.pgr++%100==99)
+                                pb.Refresh(pg.pgr,"");
+                        }
 
-                    BundleItem f = files[i] as BundleItem;
-                    if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
-                    {
-                        var boza = "boza";
-                    }
-                    // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
-                    var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
-                    int lod2_file_id = lod2dict[lod_2_file_name];
+                        var zisbundleitem = zisbundle.Items.ToList()[i].Value;
+                        BundleItem f = zisbundleitem;
+                        if ((f.Bundle as Bundle).Patchedfiles.Contains(f))
+                        {
+                            var boza = "boza";
+                        }
+                        // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
+                        var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
+                        int lod2_file_id = lod2dict[lod_2_file_name];
 
-                    // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
-                    int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
-
-
-                    //System.Console.WriteLine("yo");
-
-                    if (f.Name.Split('.').Last() == "buffer")
-                    {
-                        notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                        return;
-                    }
-                    //System.Console.WriteLine("ya");
+                        // Getting cr2w database file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
+                        int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
 
 
-                    //var threadid = Thread.CurrentThread.ManagedThreadId;
-                    /*                if (!threadpooldict.ContainsKey(threadid))
-                                    {
-                                        var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
+                        //System.Console.WriteLine("yo");
+
+                        if (f.Name.Split('.').Last() == "buffer")
+                        {
+                            notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                            return;
+                        }
+                        //System.Console.WriteLine("ya");
+
+
+                        //var threadid = Thread.CurrentThread.ManagedThreadId;
+                        /*                if (!threadpooldict.ContainsKey(threadid))
                                         {
-                                            ThickNess = LineThickNess.Single,
-                                            Title = new Colors(White, Black)
-                                        });
-                                        threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
-                                    }
-                                    if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
-                                    {
-                                        lock (threadwindow)
-                                        {
-                                            threadwindow.WriteLine(new String(' ',140));
-                                            threadwindow.Write(f.Name);
+                                            var newwindow = Window.OpenBox("Thread " + threadid, 140, 3, new BoxStyle()
+                                            {
+                                                ThickNess = LineThickNess.Single,
+                                                Title = new Colors(White, Black)
+                                            });
+                                            threadpooldict.TryAdd(Thread.CurrentThread.ManagedThreadId, newwindow);
                                         }
-                                    }*/
-
-                    var crw = new CR2WFile();
-
-
-                    using (var ms = new MemoryStream())
-                    using (var br = new BinaryReader(ms))
-                    {
-                        //System.Console.WriteLine("yaa");
-
-                        try
-                        {
-                            f.ExtractExistingMMF(ms);
-                        }
-                        catch (Exception ex)
-                        {
-                            //System.Console.WriteLine("mff reading not thread safe...");
-                            //System.Console.WriteLine(ex.ToString());
-                            throw ex;
-                        }
-                        ms.Seek(0, SeekOrigin.Begin);
-                        //System.Console.WriteLine("ye");
-
-                        try
-                        {
-                            if (crw.Read(br) == 1)
-                            {
-                                notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                                return;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Console.WriteLine("weird thing at " + f.Name);
-                            System.Console.WriteLine(ex.ToString());
-                            throw ex;
-                        }
-                    }
-                    //System.Console.WriteLine("yi");
-                    var crwfileheader = crw.GetFileHeader();
-                    // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
-                    fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
-                        crwfileheader.flags + ", " + crwfileheader.timeStamp + ", " + crwfileheader.buildVersion + ", " +
-                        crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
-                        crwfileheader.numChunks + ")");
-
-                    // Name - block 2 - col1 
-                    /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
+                                        if (threadpooldict.TryGetValue(threadid, out IConsole threadwindow))
                                         {
-                                            int file_id = 0;
-                                            //int lod2_file_id;
-                                            //int lod1_file_id=lod1dict[f.Name];
-                                            int name_id;
-                                            string name;
-                                            int hash;
-                                            nameinsertbuffer.Add(file_id.ToString());
+                                            lock (threadwindow)
+                                            {
+                                                threadwindow.WriteLine(new String(' ',140));
+                                                threadwindow.Write(f.Name);
+                                            }
                                         }*/
 
+                        var crw = new CR2WFile();
 
-                });
-            }
-            catch (AggregateException ae)
-            {
-                var ignoredExceptions = new List<Exception>();
-                // This is where you can choose which exceptions to handle.
-                foreach (var ex in ae.Flatten().InnerExceptions)
-                {
-                    if (ex is ArgumentException)
-                        System.Console.WriteLine(ex.Message);
-                    else
-                        ignoredExceptions.Add(ex);
+
+                        using (var ms = new MemoryStream())
+                        using (var br = new BinaryReader(ms))
+                        {
+                            //System.Console.WriteLine("yaa");
+
+                            try
+                            {
+                                f.ExtractExistingMMF(ms, mmfedbundle.Value);
+                            }
+                            catch (Exception ex)
+                            {
+                                //System.Console.WriteLine("mff reading not thread safe...");
+                                //System.Console.WriteLine(ex.ToString());
+                                throw ex;
+                            }
+                            ms.Seek(0, SeekOrigin.Begin);
+                            //System.Console.WriteLine("ye");
+
+                            try
+                            {
+                                if (crw.Read(br) == 1)
+                                {
+                                    notcr2wfiles.Add(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                                    return;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Console.WriteLine("weird thing at " + f.Name);
+                                System.Console.WriteLine(ex.ToString());
+                                throw ex;
+                            }
+                        }
+                        //System.Console.WriteLine("yi");
+                        var crwfileheader = crw.GetFileHeader();
+                        // File - Fileheader : file_id lod0_file_id lod1_file_id version flags timestamp buildvers filesize internalbuffersize crc32 numchunks
+                        fileinsertbuffer.Add("(" + lod2_file_id + ", " + lod1_file_id + ", " + crwfileheader.version + ", " +
+                            crwfileheader.flags + ", \'" + crwfileheader.timeStamp + "\', " + crwfileheader.buildVersion + ", " +
+                            crwfileheader.fileSize + ", " + crwfileheader.bufferSize + ", " + crwfileheader.crc32 + ", " +
+                            crwfileheader.numChunks + ")");
+
+                        // Name - block 2 - col1 
+                        /*                    for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
+                                            {
+                                                int file_id = 0;
+                                                //int lod2_file_id;
+                                                //int lod1_file_id=lod1dict[f.Name];
+                                                int name_id;
+                                                string name;
+                                                int hash;
+                                                nameinsertbuffer.Add(file_id.ToString());
+                                            }*/
+
+
+                    });
                 }
-                if (ignoredExceptions.Count > 0) throw new AggregateException(ignoredExceptions);
+                catch (AggregateException ae)
+                {
+                    var ignoredExceptions = new List<Exception>();
+                    // This is where you can choose which exceptions to handle.
+                    foreach (var ex in ae.Flatten().InnerExceptions)
+                    {
+                        if (ex is ArgumentException)
+                            System.Console.WriteLine(ex.Message);
+                        else
+                            ignoredExceptions.Add(ex);
+                    }
+                    if (ignoredExceptions.Count > 0) throw new AggregateException(ignoredExceptions);
+                }
             }
 
 
@@ -1118,11 +1137,12 @@ namespace WolvenKit.Console
             //when flushing buffer, reencode
             // Insert file - fileheader
             string fileinsertcommand = "insert into cr2w.file" +
-                "(file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildvers,filesize,internalbuffersize,crc32,numchunks) values ";
+                "(lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) values ";
             var it = fileinsertbuffer.GetEnumerator();
+            it.MoveNext();
             for (int j = 0; j < fileinsertbuffer.Count; j++)
             {
-                fileinsertcommand += Encoding.UTF8.GetString(Encoding.Default.GetBytes(it.Current));
+                fileinsertcommand += Encoding.UTF8.GetString(Encoding.Default.GetBytes(it.Current + (j<fileinsertbuffer.Count-1?",":"")));
                 it.MoveNext();
             }
             System.Console.WriteLine("\t... insert commands compiled for " + lod1cnt + " cr2w files.");
