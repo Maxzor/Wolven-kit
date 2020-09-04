@@ -355,23 +355,23 @@ namespace WolvenKit.CR2W.Types
         {
             string varname = value.REDName.FirstCharToUpper();
             varname = NormalizeName(varname);
-
-            var map = this.accessor.GetMembers().Select(_ => _.Name);
-            if (map.Contains(varname))
+            foreach (var member in this.accessor.GetMembers())
             {
-                accessor[this, varname] = value;
+                if (member.Name == varname)
+                {
+                    if (this.cr2w.FileName == "characters\\npc_entities\\monsters\\vampire_katakan_lvl1.w2ent" && this.REDType == "CBTTaskTeleportDecoratorDef")
+                        System.Console.WriteLine(this.Parent);
+                    accessor[this, varname] = value;
+                    return true;
+                }
+                else if (member.Name == varname.FirstCharToLower())
+                {
+                    accessor[this, varname.FirstCharToLower()] = value;
+                    return true;
+                }
             }
-            else if (map.Contains(varname.FirstCharToLower()))
-            {
-                accessor[this, varname.FirstCharToLower()] = value;
-            }
-            else
-            {
-                Debug.WriteLine($"({value.REDType}){varname} not found in ({this.REDType}){this.REDName}");
-                return false;
-            }
-
-            return true;
+            Debug.WriteLine($"({value.REDType}){varname} not found in ({this.REDType}){this.REDName}");
+            return false;
 
             string NormalizeName(string name)
             {

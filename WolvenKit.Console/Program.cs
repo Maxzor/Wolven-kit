@@ -996,7 +996,7 @@ namespace WolvenKit.Console
                 using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
                     fs.CopyTo(mmvs);
 
-                Parallel.For(0, bundle.Items.Count, new ParallelOptions { MaxDegreeOfParallelism = 20 }, i =>
+                Parallel.For(0, bundle.Items.Count, new ParallelOptions { MaxDegreeOfParallelism = 15 }, i =>
                 {
                     BundleItem f = bundle.Items.ToList()[i].Value;
                     lock (bundlepg)

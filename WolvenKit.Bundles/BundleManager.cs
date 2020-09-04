@@ -93,7 +93,7 @@ namespace WolvenKit.Bundles
         /// <param name="exedir">Path to executable directory</param>
         public void LoadAll(string exedir)
         {
-            var content = Path.Combine(new FileInfo(exedir).Directory.Parent.Parent.FullName, "content");
+            var content = Path.Combine(new FileInfo(exedir).Directory.Parent.FullName, "content");
 
             var contentdirs = new List<string>(Directory.GetDirectories(content, "content*"));
             contentdirs.Sort(new AlphanumComparator<string>());
