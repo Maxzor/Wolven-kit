@@ -953,16 +953,15 @@ namespace WolvenKit.Console
                 var security = new MemoryMappedFileSecurity();
                 /*security.AddAccessRule(new AccessRule<MemoryMappedFileRights>(new SecurityIdentifier(WellKnownSidType.WorldSid, null), MemoryMappedFileRights.FullControl, AccessControlType.Allow));*/
                 //TODO Don't rewrite if just open!
-                var mmf = MemoryMappedFile.CreateOrOpen(e,b.GetSize, MemoryMappedFileAccess.ReadWrite/*, MemoryMappedFileOptions.DelayAllocatePages, security, HandleInheritability.Inheritable*/);
+                var mmf = MemoryMappedFile.CreateNew(e,b.GetSize, MemoryMappedFileAccess.ReadWrite/*, MemoryMappedFileOptions.DelayAllocatePages, security, HandleInheritability.Inheritable*/);
                 //var mmf = MemoryMappedFile.CreateFromFile(b.FileName, FileMode.Open, e, 0, MemoryMappedFileAccess.Read);
                 //System.Console.WriteLine(e);
                 using (FileStream fs = File.OpenRead(b.FileName))
                 using (var br = new BinaryReader(fs))
-                using (MemoryMappedViewAccessor accessor = mmf.CreateViewAccessor(0, b.GetSize))
-                    {
-                        for (int i = 0; i < b.GetSize; i++)
-                            accessor.Write(i, br.ReadByte());
-                    }
+                using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
+                {
+                    fs.CopyTo(mmvs);
+                }
                 memorymappedbundles.Add(e, mmf);
                 //System.Console.WriteLine(memorymappedbundles[e].ToString());
                 break;
@@ -1003,11 +1002,11 @@ namespace WolvenKit.Console
                 var zisbundle = bundles/*[mmfedbundle.Key]*/.ToList().First().Value;
                 try
                 {
-                    Parallel.For(0, 9000/*zisbundle.Items.Count*/, new ParallelOptions { MaxDegreeOfParallelism = 14 }, i =>
+                    Parallel.For(0, 9000/*zisbundle.Items.Count*/, new ParallelOptions { MaxDegreeOfParallelism = 20 }, i =>
                     {
                         lock (pg)
                         {
-                            if(pg.pgr++%100==99)
+                            if(pg.pgr++%10==9)
                                 pb.Refresh(pg.pgr,"");
                         }
 
