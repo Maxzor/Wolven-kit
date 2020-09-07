@@ -14,6 +14,7 @@ using System.IO;
 namespace WolvenKit.Console
 {
     using CR2W;
+    using CR2W.Editors;
     using System.IO;
     using CR2W.Types;
     using Cache;
@@ -33,6 +34,7 @@ namespace WolvenKit.Console
     using System.Security.AccessControl;
     using System.Security.Principal;
     using NpgsqlTypes;
+    using System.Threading;
 
     public partial class WolvenKitConsole
     {
@@ -54,7 +56,6 @@ namespace WolvenKit.Console
                 InsertBuffer = new ConcurrentStack<string>();
             }
         }
-
 
         private static async Task<int> CR2WToPostgres(CR2WToPostgresOptions options)
         {
@@ -167,29 +168,7 @@ namespace WolvenKit.Console
             System.Console.WriteLine("  Creating cr2w insert commands...");
             var bundles = bm.Bundles.Values.ToList();
             List<IWitcherFile> files = bm.Items.SelectMany(_ => _.Value).ToList();
-
-/*            var insertbuffers = new List<BatchInsertBufferWrapper>();
-
-            var fileinsertbuffer = new BatchInsertBufferWrapper("insert into cr2w.file" +
-                    "(file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) values ");
-            //var nameinsertbuffer = new BatchInsertBufferWrapper("insert into cr2w.nametable" +
-            //        "(file_id,name_id,name,hash) values ");
-            var importinsertbuffer = new BatchInsertBufferWrapper("");
-            var propertiesinsertbuffer = new BatchInsertBufferWrapper("");
-            var chunkinsertbuffer = new BatchInsertBufferWrapper("insert into cr2w.export" +
-                    "(file_id,chunkid,class_id,objectflags,parentchunkid,datasize,dataoffset,template,crc32) values ");
-            var cvarinsertbuffer = new BatchInsertBufferWrapper("");
-            var bufferinsertbuffer = new BatchInsertBufferWrapper("");
-            var embeddedinsertbuffer = new BatchInsertBufferWrapper("");
-            insertbuffers.Add(fileinsertbuffer);
-            //insertbuffers.Add(nameinsertbuffer);
-            insertbuffers.Add(importinsertbuffer);
-            insertbuffers.Add(propertiesinsertbuffer);
-            insertbuffers.Add(chunkinsertbuffer);
-            insertbuffers.Add(cvarinsertbuffer);
-            insertbuffers.Add(bufferinsertbuffer);
-            insertbuffers.Add(embeddedinsertbuffer);
-*/
+            int globalcvarcounter = 1;
 
             var notcr2wfiles = new ConcurrentStack<Tuple<int, int, string>>(); // lod2 lod1 lod1-name
 
@@ -210,236 +189,210 @@ namespace WolvenKit.Console
             var bundlepb = new Konsole.ProgressBar((IConsole)bundleprogressbarwindow, (PbStyle)PbStyle.DoubleLine, 100, (int)70);
 
             bool flagpass = true;
-                foreach (var bundle in bundles)
+            foreach (var bundle in bundles)
+            {
+
+                pb.Refresh(++pg.pgr, bundle.FileName);
+
+                /*                if (bundle == bundles[4])
+                                    flagpass = false;
+                                if (flagpass)
+                                    continue;*/
+
+                /*                if (bundle.FileName.Contains("buffers") ||
+                                        bundle.FileName.Contains("xml") ||
+                                        bundle.FileName.Contains("buffers"))
+                                        continue;
+                */
+
+                bundlepb.Max = (int)bundle.Items.Count();
+                var bundlepg = new Progress(0);
+                //Cannot use bundle.GetSize, it is broken on patch1 bundle
+                var filerealsize = new FileInfo(bundle.FileName).Length;
+
+                var e = bundle.FileName.GetHashMD5();
+                var mmf = MemoryMappedFile.CreateNew(e, /*bundle.GetSize*/filerealsize, MemoryMappedFileAccess.ReadWrite);
+                //MemoryStream ms0 = new MemoryStream();
+                using (FileStream fs = File.OpenRead(bundle.FileName))
+                using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
                 {
+                    fs.CopyTo(/*ms0*/mmvs);
+                    //ms0.CopyTo(mmvs);
+                }
 
-                    pb.Refresh(++pg.pgr, bundle.FileName);
 
-/*                if (bundle == bundles[4])
-                    flagpass = false;
-                if (flagpass)
-                    continue;*/
+                var bundleitemssortedbysize = bundle.Items.Values.ToList();
 
-/*                if (bundle.FileName.Contains("buffers") ||
-                        bundle.FileName.Contains("xml") ||
-                        bundle.FileName.Contains("buffers"))
-                        continue;
-*/
+                Parallel.For(0, bundle.Items.Count, new ParallelOptions { MaxDegreeOfParallelism = 15 }, i =>
+                {
+                    BundleItem f = bundle.Items.ToList()[i].Value;
 
-                    bundlepb.Max = (int)bundle.Items.Count();
-                    var bundlepg = new Progress(0);
-                    //Cannot use bundle.GetSize, it is broken on patch1 bundle
-                    var filerealsize = new FileInfo(bundle.FileName).Length;
+                    lock (bundlepg)
+                        if (bundlepg.pgr++ % 10 == 9)
+                            bundlepb.Refresh(bundlepg.pgr, f.Name);
 
-                    var e = bundle.FileName.GetHashMD5();
-                    var mmf = MemoryMappedFile.CreateNew(e, /*bundle.GetSize*/filerealsize, MemoryMappedFileAccess.ReadWrite);
-                    //MemoryStream ms0 = new MemoryStream();
-                    using (FileStream fs = File.OpenRead(bundle.FileName))
-                    using (MemoryMappedViewStream mmvs = mmf.CreateViewStream())
+                    if (f.Name.Split('.').Last() == "w2l")
                     {
-                        fs.CopyTo(/*ms0*/mmvs);
-                        //ms0.CopyTo(mmvs);
-                    }
-
-
-                    var bundleitemssortedbysize = bundle.Items.Values.ToList();
-
-                    Parallel.For(0, bundle.Items.Count, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
-                    {
-                        BundleItem f = bundle.Items.ToList()[i].Value;
-
-                        lock (bundlepg)
-                            if (bundlepg.pgr++ % 10 == 9)
-                                bundlepb.Refresh(bundlepg.pgr, f.Name);
-
-                        if (f.Name.Split('.').Last() == "w2l")
-                        {
                             //System.Console.WriteLine("Not bothering with buggy files");
                             return;
-                        }
+                    }
 
-                        if (bundle.Patchedfiles.Contains(f))
-                        {
-                            System.Console.WriteLine("Not bothering with patched files yet  ");
+                    if (bundle.Patchedfiles.Contains(f))
+                    {
+                        System.Console.WriteLine("Not bothering with patched files yet  ");
+                        return;
+                    }
+
+                    // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
+                    var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
+                    int lod2_file_id = lod2dict[lod_2_file_name];
+
+                    // Getting cr2w database general file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
+                    int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
+                    // Getting cr2w database specific file id (lod1x2, cr2w) - lod1x2dict - lod1_id + lod2_id --> cr2w_file_id
+                    int cr2w_file_id = lod1x2dict[Tuple.Create(lod2_file_id, lod1_file_id)];
+
+                    //System.Console.WriteLine("yo");
+
+                    if (f.Name.Split('.').Last() == "buffer")
+                    {
+                        notcr2wfiles.Push(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
                             return;
-                        }
-
-                        // Getting bundle database file id - lod2dict - lod2 absolute_path --> lod2_file_id
-                        var lod_2_file_name = f.Bundle.FileName.Replace("C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\", "").Replace("\\", "/");
-                        int lod2_file_id = lod2dict[lod_2_file_name];
-
-                        // Getting cr2w database general file id (lod1) - lod1dict - lod2_id + absolute_virtual_path --> lod1_file_id
-                        int lod1_file_id = lod1dict[Tuple.Create(lod2_file_id, f.Name)];
-                        // Getting cr2w database specific file id (lod1x2, cr2w) - lod1x2dict - lod1_id + lod2_id --> cr2w_file_id
-                        int cr2w_file_id = lod1x2dict[Tuple.Create(lod2_file_id, lod1_file_id)];
-
-                        //System.Console.WriteLine("yo");
-
-                        if (f.Name.Split('.').Last() == "buffer")
-                        {
-                            notcr2wfiles.Push(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
-                            return;
-                        }
+                    }
                         //System.Console.WriteLine("ya");
                         var crw = new CR2WFile();
 
 
-                        using (var ms = new MemoryStream())
-                        using (var br = new BinaryReader(ms))
-                        {
-                            f.ExtractExistingMMF(ms, mmf);
-                            ms.Seek(0, SeekOrigin.Begin);
+                    using (var ms = new MemoryStream())
+                    using (var br = new BinaryReader(ms))
+                    {
+                        f.ExtractExistingMMF(ms, mmf);
+                        ms.Seek(0, SeekOrigin.Begin);
 
-                            try
+                        try
+                        {
+                            if (crw.Read(br) == 1)
                             {
-                                if (crw.Read(br) == 1)
-                                {
-                                    notcr2wfiles.Push(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
+                                notcr2wfiles.Push(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
                                     return;
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Console.WriteLine("weird thing at " + f.Name);
-                                System.Console.WriteLine(ex.ToString());
-                                throw ex;
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            System.Console.WriteLine("weird thing at " + f.Name);
+                            System.Console.WriteLine(ex.ToString());
+                            throw ex;
+                        }
+                    }
 
-                        var oneconn = new NpgsqlConnection(connString);
-                        oneconn.Open();
+
+                    var oneconn = new NpgsqlConnection(connString);
+                    oneconn.Open();
                         // File - Fileheader
-                        using (var filewriter = oneconn.BeginBinaryImport("COPY cr2w.file (file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) FROM STDIN (FORMAT BINARY)"))
-                        {
-                            var crwfileheader = crw.GetFileHeader();
+                    using (var filewriter = oneconn.BeginBinaryImport("COPY cr2w.file (file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) FROM STDIN (FORMAT BINARY)"))
+                    {
+                        var crwfileheader = crw.GetFileHeader();
 
-                            filewriter.StartRow();
-                            filewriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                            filewriter.Write(lod2_file_id, NpgsqlDbType.Integer);
-                            filewriter.Write(lod1_file_id, NpgsqlDbType.Integer);
-                            filewriter.Write((int)crwfileheader.version, NpgsqlDbType.Smallint);
-                            filewriter.Write((int)crwfileheader.flags, NpgsqlDbType.Integer);
-                            filewriter.Write((long)crwfileheader.timeStamp, NpgsqlDbType.Bigint);
-                            filewriter.Write((int)crwfileheader.buildVersion, NpgsqlDbType.Integer);
-                            filewriter.Write((long)crwfileheader.fileSize, NpgsqlDbType.Bigint);
-                            filewriter.Write((long)crwfileheader.bufferSize, NpgsqlDbType.Bigint);
-                            filewriter.Write((long)crwfileheader.crc32, NpgsqlDbType.Bigint);
-                            filewriter.Write((int)crwfileheader.numChunks, NpgsqlDbType.Integer);
-                            filewriter.Complete();
-                        }
-                        // Export - Chunk
-                        using (var exportwriter = oneconn.BeginBinaryImport("COPY cr2w.export (file_id,chunkid,class_id,objectflags,parentchunkid,datasize,dataoffset,template,crc32) FROM STDIN (FORMAT BINARY)"))
-                        {
-                            var data = crw.chunks[0].data;
-                            for (int chunkcounter = 0; chunkcounter < crw.chunks.Count; chunkcounter++)
-                            {
-                                var chunk = crw.chunks[chunkcounter];
-                                exportwriter.StartRow();
-                                exportwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                                exportwriter.Write(chunk.ChunkIndex, NpgsqlDbType.Integer);
-                                exportwriter.Write(classdict[data.REDType], NpgsqlDbType.Integer);
-                                exportwriter.Write((int)chunk.Export.objectFlags, NpgsqlDbType.Smallint);
-                                exportwriter.Write((int)chunk.Export.parentID, NpgsqlDbType.Integer);
-                                exportwriter.Write((int)chunk.Export.dataSize, NpgsqlDbType.Integer);
-                                exportwriter.Write((int)chunk.Export.dataOffset, NpgsqlDbType.Integer);
-                                exportwriter.Write((int)chunk.Export.template, NpgsqlDbType.Integer);
-                                exportwriter.Write((long)chunk.Export.crc32, NpgsqlDbType.Bigint);
-                            }
-                            exportwriter.Complete();
-                        }
-
-                        oneconn.Close();
-/*                        fileinsertbuffer.InsertBuffer.Push("(" + cr2w_file_id + "," + lod2_file_id + "," + lod1_file_id + "," + crwfileheader.version + "," +
-                                                    crwfileheader.flags + ", \'" + crwfileheader.timeStamp + "\', " + crwfileheader.buildVersion + "," +
-                                                    crwfileheader.fileSize + "," + crwfileheader.bufferSize + "," + crwfileheader.crc32 + "," +
-                                                    crwfileheader.numChunks + ")");
-*/
-                        // Name - block 2 - col1 
-/*                        for (int namecounter = 0; namecounter < crw.names.Count; namecounter++)
-                            nameinsertbuffer.InsertBuffer.Add("(" + cr2w_file_id + "," + namecounter + ",\'" + crw.names[namecounter].Str + "\'," + crw.names[namecounter].Name.hash + ")") ;
-*/
-
-                        // Export - block 5 : file_id,chunkid,class_id,objectflags,parentchunkid,datasize,dataoffset,template,crc32
-/*                        var data = crw.chunks[0].data;
+                        filewriter.StartRow();
+                        filewriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                        filewriter.Write(lod2_file_id, NpgsqlDbType.Integer);
+                        filewriter.Write(lod1_file_id, NpgsqlDbType.Integer);
+                        filewriter.Write((int)crwfileheader.version, NpgsqlDbType.Smallint);
+                        filewriter.Write((int)crwfileheader.flags, NpgsqlDbType.Integer);
+                        filewriter.Write((long)crwfileheader.timeStamp, NpgsqlDbType.Bigint);
+                        filewriter.Write((int)crwfileheader.buildVersion, NpgsqlDbType.Integer);
+                        filewriter.Write((long)crwfileheader.fileSize, NpgsqlDbType.Bigint);
+                        filewriter.Write((long)crwfileheader.bufferSize, NpgsqlDbType.Bigint);
+                        filewriter.Write((long)crwfileheader.crc32, NpgsqlDbType.Bigint);
+                        filewriter.Write((int)crwfileheader.numChunks, NpgsqlDbType.Integer);
+                        filewriter.Complete();
+                    }
+                    // Export - Chunk
+                    var chunkrecursedresult = new List<(IEditableVariable, int)>();
+                    var cvariddict = new Dictionary<IEditableVariable, int>();
+                    using (var exportwriter = oneconn.BeginBinaryImport("COPY cr2w.export (file_id,chunkid,class_id,objectflags,parentchunkid,vparentchunkid,datasize,dataoffset,template,crc32) FROM STDIN (FORMAT BINARY)"))
+                    {
+                        var data0 = crw.chunks[0].data;
                         for (int chunkcounter = 0; chunkcounter < crw.chunks.Count; chunkcounter++)
                         {
                             var chunk = crw.chunks[chunkcounter];
-                            chunkinsertbuffer.InsertBuffer.Push("(" +
-                                cr2w_file_id + "," +
-                                chunk.ChunkIndex + "," +
-                                classdict[data.REDType] + "," +
-                                chunk.Export.objectFlags + "," +
-                                chunk.Export.parentID + "," +
-                                chunk.Export.dataSize + "," +
-                                chunk.Export.dataOffset + "," +
-                                chunk.Export.template + "," +
-                                chunk.Export.crc32 + ")");
-                        }
-*/
-                    });
-                    mmf.Dispose();
+                            var data = chunk.data;
+                            exportwriter.StartRow();
+                            exportwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                            exportwriter.Write(chunk.ChunkIndex, NpgsqlDbType.Integer);
+                            exportwriter.Write(classdict[data0.REDType], NpgsqlDbType.Integer);
+                            exportwriter.Write((int)chunk.Export.objectFlags, NpgsqlDbType.Smallint);
+                            exportwriter.Write((int)chunk.Export.parentID, NpgsqlDbType.Integer);
+                            exportwriter.Write((int)chunk.VirtualParentChunkIndex, NpgsqlDbType.Integer);
+                            exportwriter.Write((int)chunk.Export.dataSize, NpgsqlDbType.Integer);
+                            exportwriter.Write((int)chunk.Export.dataOffset, NpgsqlDbType.Integer);
+                            exportwriter.Write((int)chunk.Export.template, NpgsqlDbType.Integer);
+                            exportwriter.Write((long)chunk.Export.crc32, NpgsqlDbType.Bigint);
 
-/*                    foreach (var insertbuffer in insertbuffers)
-                        if(insertbuffer.InsertBuffer.Count>0)
-                            FlushBatchInsertToPostgres(insertbuffer);
-*/
+                            var res = RecurseSerializedCvars(data, cvariddict);
+                            chunkrecursedresult.AddRange(res.Item1);
+                            cvariddict = cvariddict.Concat(res.Item2)
+                                .ToLookup(x => x.Key, x => x.Value)
+                                .ToDictionary(x => x.Key, g => g.First());
+                        }
+                        exportwriter.Complete();
+                    }
+
+                    using (var cvarwriter = oneconn.BeginBinaryImport("COPY cr2w.cvar (cvar_id,file_id,varchunkindex,parent_cvar_id,redname,redtype,redvalue) FROM STDIN (FORMAT BINARY)"))
+                    {
+                        foreach (var cvart in chunkrecursedresult)
+                        {
+                            cvarwriter.StartRow();
+                            var debu = cvariddict[cvart.Item1];
+                            cvarwriter.Write(cvariddict[cvart.Item1], NpgsqlDbType.Integer);
+                            cvarwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                            cvarwriter.Write(cvart.Item1.VarChunkIndex, NpgsqlDbType.Integer);
+                            cvarwriter.Write(cvart.Item2, NpgsqlDbType.Integer);
+                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDName), NpgsqlDbType.Text);
+                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDType), NpgsqlDbType.Text);
+                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDValue), NpgsqlDbType.Text);
+                        }
+                        cvarwriter.Complete();
+                    }
+                    oneconn.Close();
+                });
+                mmf.Dispose();
                 //ms0.Dispose();
                 //break;
-
             }
-
-
-
-            //System.Console.WriteLine("stuff");
-            //System.Console.WriteLine("\t... insert commands created for " + lod1cnt + " cr2w files.");
-
             return 1;
 
+
             #region internalfunctions
-            void FlushBatchInsertToPostgres(BatchInsertBufferWrapper insertbuffer)
+
+            (List<(IEditableVariable, int)>, Dictionary<IEditableVariable, int>) RecurseSerializedCvars(IEditableVariable data, Dictionary<IEditableVariable, int> cvariddict)
             {
-                // Insert some data
-                //when flushing buffer, reencode
-                string insertcommand = insertbuffer.CommandHeader;
-                int inslines = insertbuffer.InsertBuffer.Count();
-                System.Console.WriteLine($"Creating batch insert of {inslines}...");
-                var insertbuffercount = insertbuffer.InsertBuffer.Count;
-                for (int j = 0; j < insertbuffer.InsertBuffer.Count; j++)
+                var parentedcvars = new List<(IEditableVariable, int)>();
+                LoopWrapper(data);
+                return (parentedcvars, cvariddict);
+
+                void LoopWrapper(IEditableVariable var)
                 {
-                    if(insertbuffer.InsertBuffer.TryPop(out var popped))
+                    int cvarpostgresid = Interlocked.Increment(ref globalcvarcounter);
+                    cvariddict.Add(var, cvarpostgresid);
+                    List<IEditableVariable> nextl = var.GetExistingVariables(true);
+                    if (nextl == null)
+                        return;
+                    foreach (var l in nextl)
                     {
-                        insertcommand += popped + (j < insertbuffercount - 1 ? "," : "");
+                        parentedcvars.Add((l, cvarpostgresid));
+                        LoopWrapper(l);
                     }
-                    else
-                    {
-                        System.Console.WriteLine($"Something went wrong popping {j}...");
-                    }
-                    if (j % 10000 == 0)
-                        System.Console.WriteLine(j);
+
                 }
-                insertbuffer.InsertBuffer.Clear();
 
-                //if (/*Encoding.UTF8.GetString(Encoding.Default.GetBytes(it.Current)) != it.Current || it.Current.Contains("\n") || */Encoding.Default.GetBytes(it.Current).Locate(new byte[] { 10 }).Length != 0)
 
-/*                foreach (var pos in Encoding.Default.GetBytes(insertcommand).Locate(new byte[] { 10 }))
-                    Encoding.Default.GetBytes(insertcommand)[pos] = 0;
-                foreach (var pos in Encoding.Default.GetBytes(insertcommand).Locate(new byte[] { 13 }))
-                    Encoding.Default.GetBytes(insertcommand)[pos] = 0;
-*/
-                //System.Console.WriteLine(Encoding.UTF8.GetString(Encoding.Default.GetBytes(it.Current)));
-                System.Console.WriteLine($"\t... batch insert of {inslines} lines created.");
-
-                cmd = new NpgsqlCommand(insertcommand, conn);
-                cmd.ExecuteNonQueryAsync();
-                System.Console.WriteLine($"\t... batch inserted.");
-
+                #endregion // internalfunctions
+                #endregion //dump
             }
-            #endregion // internalfunctions
-            #endregion //dump
+
         }
-
     }
-
     static class ByteArrayRocks
     {
         static readonly int[] Empty = new int[0];

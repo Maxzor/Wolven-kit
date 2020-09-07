@@ -25,6 +25,7 @@ namespace WolvenKit.CR2W.Editors
 
         Control GetEditor();
         List<IEditableVariable> GetEditableVariables();
+        List<IEditableVariable> GetExistingVariables(bool includebuffers);
 
         bool CanRemoveVariable(IEditableVariable child);
         bool CanAddVariable(IEditableVariable newvar);

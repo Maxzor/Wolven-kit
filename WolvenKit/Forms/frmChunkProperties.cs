@@ -210,7 +210,7 @@ namespace WolvenKit
                 var context = new CR2WCopyAction()
                 {
                     DestinationFile = targetvar.cr2w,
-                    Parent = targetvar.Parent as CVariable
+                    Parent = targetvar.ParentVar as CVariable
                 };
                 var copy = cvar.Copy(context);
                 targetvar.SetValue(copy);

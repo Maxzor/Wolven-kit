@@ -59,8 +59,8 @@ namespace WolvenKit.CR2W.Types
         {
             IsSerialized = true;
 
-            if (Parent != null)
-                if (Parent is CVariable cparent)
+            if (ParentVar != null)
+                if (ParentVar is CVariable cparent)
                     cparent.SetIsSerialized();
         }
 
@@ -158,7 +158,7 @@ namespace WolvenKit.CR2W.Types
             var currentcvar = this as IEditableVariable;
             while (currentcvar.VarChunkIndex == -1)
             {
-                currentcvar = currentcvar.ParentVar as IEditableVariable;
+                currentcvar = currentcvar.ParentVar;
             }
             return currentcvar.VarChunkIndex;
         }
@@ -205,10 +205,11 @@ namespace WolvenKit.CR2W.Types
         {
             List<IEditableVariable> redvariables = new List<IEditableVariable>();
 
-            foreach (Member item in this.GetREDMembers(true))
+            foreach (Member item in this.GetREDMembers(includeBuffers))
             {
-                if (includeBuffers && item.GetMemberAttribute<REDBufferAttribute>()==null)
-                    continue;
+                // ??
+                //if (includeBuffers && item.GetMemberAttribute<REDBufferAttribute>()==null)
+                //    continue;
 
                 object o = accessor[this, item.Name];
                 if (o is CVariable cvar)
@@ -375,7 +376,7 @@ namespace WolvenKit.CR2W.Types
                 if (member.Name == varname)
                 {
                     if (this.cr2w.FileName == "characters\\npc_entities\\monsters\\vampire_katakan_lvl1.w2ent" && this.REDType == "CBTTaskTeleportDecoratorDef")
-                        System.Console.WriteLine(this.Parent);
+                        System.Console.WriteLine(this.ParentVar);
                     accessor[this, varname] = value;
                     return true;
                 }
