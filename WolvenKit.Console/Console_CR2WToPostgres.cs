@@ -340,17 +340,22 @@ namespace WolvenKit.Console
 
                     using (var cvarwriter = oneconn.BeginBinaryImport("COPY cr2w.cvar (cvar_id,file_id,varchunkindex,parent_cvar_id,redname,redtype,redvalue) FROM STDIN (FORMAT BINARY)"))
                     {
+                        Encoding iso88591 = Encoding.GetEncoding("ISO-8859-1");
+                        Encoding utf8 = Encoding.UTF8;
                         foreach (var cvart in chunkrecursedresult)
                         {
+                            var cvar = cvart.Item1;
+
                             cvarwriter.StartRow();
-                            var debu = cvariddict[cvart.Item1];
-                            cvarwriter.Write(cvariddict[cvart.Item1], NpgsqlDbType.Integer);
+                            var debu = cvariddict[cvar];
+                            cvarwriter.Write(cvariddict[cvar], NpgsqlDbType.Integer);
                             cvarwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                            cvarwriter.Write(cvart.Item1.VarChunkIndex, NpgsqlDbType.Integer);
+                            cvarwriter.Write(cvar.VarChunkIndex, NpgsqlDbType.Integer);
                             cvarwriter.Write(cvart.Item2, NpgsqlDbType.Integer);
-                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDName), NpgsqlDbType.Text);
-                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDType), NpgsqlDbType.Text);
-                            cvarwriter.Write(Encoding.GetEncoding("iso-8859-1").GetBytes(cvart.Item1.REDValue), NpgsqlDbType.Text);
+                            cvarwriter.Write(cvar.REDName, NpgsqlDbType.Text);
+                            cvarwriter.Write(cvar.REDType, NpgsqlDbType.Text);
+                            //cvarwriter.Write(cvar.REDValue, NpgsqlDbType.Text);
+                            cvarwriter.Write(Encoding.Convert(iso88591, utf8, ByteArrayRocks.DeleteIn(iso88591.GetBytes(cvar.REDValue),0x00)), NpgsqlDbType.Text);
                         }
                         cvarwriter.Complete();
                     }
@@ -397,16 +402,28 @@ namespace WolvenKit.Console
     {
         static readonly int[] Empty = new int[0];
 
-        public static int[] Locate(this byte[] self, byte[] candidate)
+        public static byte[] DeleteIn(this byte[] self, byte source)
         {
-            if (IsEmptyLocate(self, candidate))
+            var matches = Locate(self, 0x00);
+            if (matches == new int[0])
+                return self;
+            var res = new byte[self.Length - matches.Length];
+            int j = 0;
+            for (int i = 0; i < self.Length; i++)
+                if (!matches.Contains(i))
+                    res[j++] = self[i];
+            return res;
+        }
+        public static int[] Locate(this byte[] self, byte candidate)
+        {
+            if (IsEmptyLocate(self))
                 return Empty;
 
             var list = new List<int>();
 
             for (int i = 0; i < self.Length; i++)
             {
-                if (!IsMatch(self, i, candidate))
+                if (self[i]!=candidate)
                     continue;
 
                 list.Add(i);
@@ -415,25 +432,10 @@ namespace WolvenKit.Console
             return list.Count == 0 ? Empty : list.ToArray();
         }
 
-        static bool IsMatch(byte[] array, int position, byte[] candidate)
-        {
-            if (candidate.Length > (array.Length - position))
-                return false;
-
-            for (int i = 0; i < candidate.Length; i++)
-                if (array[position + i] != candidate[i])
-                    return false;
-
-            return true;
-        }
-
-        static bool IsEmptyLocate(byte[] array, byte[] candidate)
+        static bool IsEmptyLocate(byte[] array)
         {
             return array == null
-                || candidate == null
-                || array.Length == 0
-                || candidate.Length == 0
-                || candidate.Length > array.Length;
+                || array.Length == 0;
         }
         /*
                 static void Main()
