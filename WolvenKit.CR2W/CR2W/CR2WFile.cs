@@ -21,7 +21,7 @@ using WolvenKit.Utils;
 namespace WolvenKit.CR2W
 {
     [ DataContract(Namespace = "") ]
-    public class CR2WFile : IWolvenkitFile
+    public partial class CR2WFile : IWolvenkitFile
     {
         #region Constants
         private const long MAGIC_SIZE = 4;
@@ -180,6 +180,7 @@ namespace WolvenKit.CR2W
                 typename = "handle:IBehTreeNodeDefinition";
 
             var parsedvar = CR2WTypeManager.Create(typename, varname, this, parent);
+            // The "size" variable read is something a bit strange : it takes itself into account.
             parsedvar.Read(file, size - 4);
 
             var afterVarPos = file.BaseStream.Position;
@@ -188,6 +189,7 @@ namespace WolvenKit.CR2W
             if (bytesleft > 0)
             {
                 var unreadBytes = file.ReadBytes((int)bytesleft);
+                throw new InvalidParsingException($"Parsing Variable read too short. Difference: {bytesleft}");
             }
             else if (bytesleft < 0)
             {
@@ -1224,7 +1226,6 @@ namespace WolvenKit.CR2W
             stream.Read(m_temp, 0, m_temp.Length);
 
             StringDictionary = new Dictionary<uint, string>();
-            StringBuilder sb = new StringBuilder();
             uint offset = 0;
             var tempstring = new List<byte>();
             for (uint i = 0; i < m_strings_size; i++)
@@ -1234,14 +1235,11 @@ namespace WolvenKit.CR2W
                 {
                     var text = Encoding.GetEncoding("iso-8859-1").GetString(tempstring.ToArray());
                     StringDictionary.Add(offset, text);
-                    //StringDictionary.Add(offset, sb.ToString());
-                    sb.Clear();
                     tempstring.Clear();
                     offset = i + 1;
                 }
                 else
                 {
-                    sb.Append((char)b);
                     tempstring.Add(b);
                 }
             }
@@ -1378,6 +1376,8 @@ namespace WolvenKit.CR2W
         {
             return chunks.Remove(chunk);
         }
+
         #endregion
     }
 }
+

@@ -191,7 +191,7 @@ namespace WolvenKit.CR2W.Types
 
             foreach (Member item in this.GetREDMembers(true))
             {
-                if (!includeBuffers && item.GetMemberAttribute<REDBufferAttribute>() != null)
+                if (includeBuffers && item.GetMemberAttribute<REDBufferAttribute>()==null)
                     continue;
 
                 object o = accessor[this, item.Name];
@@ -274,12 +274,11 @@ namespace WolvenKit.CR2W.Types
 
                     cvar.IsSerialized = true;
 
-                    // dbg
 #if DEBUG
                     dbg_varnames.Add($"[{cvar.REDType}] {cvar.REDName}");
 #endif
 
-                    TryAddVariable(cvar);
+                    TrySettingFastMemberAccessor(cvar);
                 }
                 #endregion
 
@@ -341,7 +340,7 @@ namespace WolvenKit.CR2W.Types
                 parsedvar.IsSerialized = true;
 
                 // add in class
-                TryAddVariable(parsedvar);
+                TrySettingFastMemberAccessor(parsedvar);
 
             }
             return parsedvars;
@@ -351,7 +350,7 @@ namespace WolvenKit.CR2W.Types
         /// Tries to set a Cvariable in the class
         /// </summary>
         /// <param name="value"></param>
-        private bool TryAddVariable(CVariable value)
+        private bool TrySettingFastMemberAccessor(CVariable value)
         {
             string varname = value.REDName.FirstCharToUpper();
             varname = NormalizeName(varname);
@@ -506,7 +505,7 @@ namespace WolvenKit.CR2W.Types
                 if (item is CVariable cvar)
                 {
                     var innercontext = new CR2WCopyAction();
-                    copy.TryAddVariable(cvar.Copy(innercontext));
+                    copy.TrySettingFastMemberAccessor(cvar.Copy(innercontext));
                 }
             }
 

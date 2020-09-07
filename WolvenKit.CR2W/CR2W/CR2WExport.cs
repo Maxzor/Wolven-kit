@@ -242,6 +242,12 @@ namespace WolvenKit.CR2W
             file.BaseStream.Seek(_export.dataOffset, SeekOrigin.Begin);
 
             CreateDefaultData();
+            if(data.REDType== "CBTTaskTeleportDecoratorDef" ||
+                data.REDType == "CBTTaskTeleportDef")
+            {
+                //System.Console.WriteLine("Not bothering with buggy vars yoo");
+                return;
+            }
 
             data.Read(file, _export.dataSize);
 
