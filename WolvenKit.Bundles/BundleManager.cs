@@ -108,7 +108,7 @@ namespace WolvenKit.Bundles
                         {
                             LoadBundle(file, true);
                         }
-            */
+            
             var dlc = Path.Combine(new FileInfo(exedir).Directory.Parent.FullName, "DLC");
             if (Directory.Exists(dlc))
             {
@@ -122,7 +122,7 @@ namespace WolvenKit.Bundles
                 {
                     LoadBundle(file);
                 }
-            }
+            }*/
 
 
             RebuildRootNode();

@@ -199,11 +199,10 @@ namespace WolvenKit.Console
                                 if (flagpass)
                                     continue;*/
 
-                /*                if (bundle.FileName.Contains("buffers") ||
-                                        bundle.FileName.Contains("xml") ||
-                                        bundle.FileName.Contains("buffers"))
-                                        continue;
-                */
+                if (bundle.FileName.Contains("buffers") ||
+                        bundle.FileName.Contains("xml"))
+                    continue;
+
 
                 bundlepb.Max = (int)bundle.Items.Count();
                 var bundlepg = new Progress(0);
@@ -254,13 +253,13 @@ namespace WolvenKit.Console
 
                     //System.Console.WriteLine("yo");
 
-                    if (f.Name.Split('.').Last() == "buffer")
+/*                    if (f.Name.Split('.').Last() == "buffer")
                     {
                         notcr2wfiles.Push(Tuple.Create(lod2_file_id, lod1_file_id, f.Name)); // lod2 lod1 lod1-name
                             return;
-                    }
+                    }*/
                         //System.Console.WriteLine("ya");
-                        var crw = new CR2WFile();
+                    var crw = new CR2WFile();
 
 
                     using (var ms = new MemoryStream())
@@ -285,79 +284,199 @@ namespace WolvenKit.Console
                         }
                     }
 
+                    // We make a list of cr2w files with the cr2w file and all its embedded cr2w files.
+                    var crwwithembedded = new List<CR2WFile>(Enumerable.Concat(new[] { crw }, crw.embedded.Select(_ => _.GetParsedFile()).ToList()));
+
+                    Encoding iso88591 = Encoding.GetEncoding("ISO-8859-1");
+                    Encoding utf8 = Encoding.UTF8;
 
                     var oneconn = new NpgsqlConnection(connString);
                     oneconn.Open();
+                    foreach (var acrw in crwwithembedded)
+                    {
+                        #region dump_fileheader
                         // File - Fileheader
-                    using (var filewriter = oneconn.BeginBinaryImport("COPY cr2w.file (file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) FROM STDIN (FORMAT BINARY)"))
-                    {
-                        var crwfileheader = crw.GetFileHeader();
-
-                        filewriter.StartRow();
-                        filewriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                        filewriter.Write(lod2_file_id, NpgsqlDbType.Integer);
-                        filewriter.Write(lod1_file_id, NpgsqlDbType.Integer);
-                        filewriter.Write((int)crwfileheader.version, NpgsqlDbType.Smallint);
-                        filewriter.Write((int)crwfileheader.flags, NpgsqlDbType.Integer);
-                        filewriter.Write((long)crwfileheader.timeStamp, NpgsqlDbType.Bigint);
-                        filewriter.Write((int)crwfileheader.buildVersion, NpgsqlDbType.Integer);
-                        filewriter.Write((long)crwfileheader.fileSize, NpgsqlDbType.Bigint);
-                        filewriter.Write((long)crwfileheader.bufferSize, NpgsqlDbType.Bigint);
-                        filewriter.Write((long)crwfileheader.crc32, NpgsqlDbType.Bigint);
-                        filewriter.Write((int)crwfileheader.numChunks, NpgsqlDbType.Integer);
-                        filewriter.Complete();
-                    }
-                    // Export - Chunk
-                    var chunkrecursedresult = new List<(IEditableVariable, int)>();
-                    var cvariddict = new Dictionary<IEditableVariable, int>();
-                    using (var exportwriter = oneconn.BeginBinaryImport("COPY cr2w.export (file_id,chunkid,class_id,objectflags,parentchunkid,vparentchunkid,datasize,dataoffset,template,crc32) FROM STDIN (FORMAT BINARY)"))
-                    {
-                        var data0 = crw.chunks[0].data;
-                        for (int chunkcounter = 0; chunkcounter < crw.chunks.Count; chunkcounter++)
+                        using (var filewriter = oneconn.BeginBinaryImport("COPY cr2w.file (file_id,lod0_file_id,lod1_file_id,version,flags,timestamp,buildversion,filesize,internalbuffersize,crc32,numchunks) FROM STDIN (FORMAT BINARY)"))
                         {
-                            var chunk = crw.chunks[chunkcounter];
-                            var data = chunk.data;
-                            exportwriter.StartRow();
-                            exportwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                            exportwriter.Write(chunk.ChunkIndex, NpgsqlDbType.Integer);
-                            exportwriter.Write(classdict[data0.REDType], NpgsqlDbType.Integer);
-                            exportwriter.Write((int)chunk.Export.objectFlags, NpgsqlDbType.Smallint);
-                            exportwriter.Write((int)chunk.Export.parentID, NpgsqlDbType.Integer);
-                            exportwriter.Write((int)chunk.VirtualParentChunkIndex, NpgsqlDbType.Integer);
-                            exportwriter.Write((int)chunk.Export.dataSize, NpgsqlDbType.Integer);
-                            exportwriter.Write((int)chunk.Export.dataOffset, NpgsqlDbType.Integer);
-                            exportwriter.Write((int)chunk.Export.template, NpgsqlDbType.Integer);
-                            exportwriter.Write((long)chunk.Export.crc32, NpgsqlDbType.Bigint);
+                            var crwfileheader = acrw.GetFileHeader();
 
-                            var res = RecurseSerializedCvars(data, cvariddict);
-                            chunkrecursedresult.AddRange(res.Item1);
-                            cvariddict = cvariddict.Concat(res.Item2)
-                                .ToLookup(x => x.Key, x => x.Value)
-                                .ToDictionary(x => x.Key, g => g.First());
+                            filewriter.StartRow();
+                            filewriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                            filewriter.Write(lod2_file_id, NpgsqlDbType.Integer);
+                            filewriter.Write(lod1_file_id, NpgsqlDbType.Integer);
+                            filewriter.Write((int)crwfileheader.version, NpgsqlDbType.Smallint);
+                            filewriter.Write((int)crwfileheader.flags, NpgsqlDbType.Integer);
+                            filewriter.Write((long)crwfileheader.timeStamp, NpgsqlDbType.Bigint);
+                            filewriter.Write((int)crwfileheader.buildVersion, NpgsqlDbType.Integer);
+                            filewriter.Write((long)crwfileheader.fileSize, NpgsqlDbType.Bigint);
+                            filewriter.Write((long)crwfileheader.bufferSize, NpgsqlDbType.Bigint);
+                            filewriter.Write((long)crwfileheader.crc32, NpgsqlDbType.Bigint);
+                            filewriter.Write((int)crwfileheader.numChunks, NpgsqlDbType.Integer);
+                            filewriter.Complete();
                         }
-                        exportwriter.Complete();
-                    }
-
-                    using (var cvarwriter = oneconn.BeginBinaryImport("COPY cr2w.cvar (cvar_id,file_id,varchunkindex,parent_cvar_id,redname,redtype,redvalue) FROM STDIN (FORMAT BINARY)"))
-                    {
-                        Encoding iso88591 = Encoding.GetEncoding("ISO-8859-1");
-                        Encoding utf8 = Encoding.UTF8;
-                        foreach (var cvart in chunkrecursedresult)
+                        #endregion //dump_fileheader
+                        #region dump_tableheader
+                        // Tableheader
+                        using (var tablewriter = oneconn.BeginBinaryImport("COPY cr2w.tableheaders (file_id,tablenumber,_offset,itemcount,crc32) FROM STDIN (FORMAT BINARY)"))
                         {
-                            var cvar = cvart.Item1;
+                            var tableheaders = acrw.GetTableHeaders();
+                            for (int j = 0; j < tableheaders.Count(); j++)
+                            {
+                                var tableheader = tableheaders[j];
 
-                            cvarwriter.StartRow();
-                            var debu = cvariddict[cvar];
-                            cvarwriter.Write(cvariddict[cvar], NpgsqlDbType.Integer);
-                            cvarwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
-                            cvarwriter.Write(cvar.VarChunkIndex, NpgsqlDbType.Integer);
-                            cvarwriter.Write(cvart.Item2, NpgsqlDbType.Integer);
-                            cvarwriter.Write(cvar.REDName, NpgsqlDbType.Text);
-                            cvarwriter.Write(cvar.REDType, NpgsqlDbType.Text);
-                            //cvarwriter.Write(cvar.REDValue, NpgsqlDbType.Text);
-                            cvarwriter.Write(Encoding.Convert(iso88591, utf8, ByteArrayRocks.DeleteIn(iso88591.GetBytes(cvar.REDValue),0x00)), NpgsqlDbType.Text);
+                                tablewriter.StartRow();
+                                tablewriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                tablewriter.Write(j, NpgsqlDbType.Integer);
+                                tablewriter.Write((int)tableheader.offset, NpgsqlDbType.Integer);
+                                tablewriter.Write((int)tableheader.itemCount, NpgsqlDbType.Integer);
+                                tablewriter.Write((long)tableheader.crc32, NpgsqlDbType.Bigint);
+                            }
+                            tablewriter.Complete();
                         }
-                        cvarwriter.Complete();
+                        #endregion //dump_tableheader
+                        #region dump_import
+                        // Import
+                        using (var importwriter = oneconn.BeginBinaryImport("COPY cr2w.importtable (file_id,depotpath,classname,flags) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            var imports = acrw.imports;
+                            for (int j = 0; j < imports.Count(); j++)
+                            {
+                                var import = imports[j];
+
+                                importwriter.StartRow();
+                                importwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                importwriter.Write(import.DepotPathStr, NpgsqlDbType.Text);
+                                importwriter.Write(import.ClassNameStr, NpgsqlDbType.Text);
+                                importwriter.Write((short)import.Flags, NpgsqlDbType.Smallint);
+                            }
+                            importwriter.Complete();
+                        }
+                        #endregion //dump_import
+                        #region dump_properties
+                        // Properties
+                        using (var propertywriter = oneconn.BeginBinaryImport("COPY cr2w.property (file_id,classname,flags,propname,propflags,hash) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            var properties = acrw.properties;
+                            for (int j = 0; j < properties.Count(); j++)
+                            {
+                                var property = properties[j];
+
+                                propertywriter.StartRow();
+                                propertywriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                propertywriter.Write((short)property.Property.className, NpgsqlDbType.Smallint);
+                                propertywriter.Write((short)property.Property.classFlags, NpgsqlDbType.Smallint);
+                                propertywriter.Write((short)property.Property.propertyName, NpgsqlDbType.Smallint);
+                                propertywriter.Write((short)property.Property.propertyFlags, NpgsqlDbType.Smallint);
+                                propertywriter.Write((long)property.Property.hash, NpgsqlDbType.Bigint);
+                            }
+                            propertywriter.Complete();
+                        }
+                        #endregion //dump_properties
+                        #region dump_chunk
+                        // Export - Chunk
+                        var chunkrecursedresult = new List<(IEditableVariable, int)>();
+                        var cvariddict = new Dictionary<IEditableVariable, int>();
+                        using (var exportwriter = oneconn.BeginBinaryImport("COPY cr2w.export (file_id,chunkid,class_id,objectflags,parentchunkid,vparentchunkid,datasize,dataoffset,template,crc32) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            var data0 = acrw.chunks[0].data;
+                            for (int chunkcounter = 0; chunkcounter < acrw.chunks.Count; chunkcounter++)
+                            {
+                                var chunk = acrw.chunks[chunkcounter];
+                                var data = chunk.data;
+                                exportwriter.StartRow();
+                                exportwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                exportwriter.Write(chunk.ChunkIndex, NpgsqlDbType.Integer);
+                                exportwriter.Write(classdict[data0.REDType], NpgsqlDbType.Integer);
+                                exportwriter.Write((int)chunk.Export.objectFlags, NpgsqlDbType.Smallint);
+                                exportwriter.Write((int)chunk.ParentChunkIndex, NpgsqlDbType.Integer);
+                                exportwriter.Write((int)chunk.VirtualParentChunkIndex, NpgsqlDbType.Integer);
+                                exportwriter.Write((int)chunk.Export.dataSize, NpgsqlDbType.Integer);
+                                exportwriter.Write((int)chunk.Export.dataOffset, NpgsqlDbType.Integer);
+                                exportwriter.Write((int)chunk.Export.template, NpgsqlDbType.Integer);
+                                exportwriter.Write((long)chunk.Export.crc32, NpgsqlDbType.Bigint);
+
+                                var res = RecurseSerializedCvars(data, cvariddict);
+                                chunkrecursedresult.AddRange(res.Item1);
+                                cvariddict = cvariddict.Concat(res.Item2)
+                                    .ToLookup(x => x.Key, x => x.Value)
+                                    .ToDictionary(x => x.Key, g => g.First());
+                            }
+                            exportwriter.Complete();
+                        }
+                        #endregion //dump_chunk
+                        #region dump_cvar
+                        // CVariable
+                        using (var cvarwriter = oneconn.BeginBinaryImport("COPY cr2w.cvar (cvar_id,file_id,varchunkindex,parent_cvar_id,redname,redtype,redvalue) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            foreach (var cvart in chunkrecursedresult)
+                            {
+                                var cvar = cvart.Item1;
+
+                                cvarwriter.StartRow();
+                                //var adebug = cvariddict[cvar];
+                                cvarwriter.Write(cvariddict[cvar], NpgsqlDbType.Integer);
+                                cvarwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                cvarwriter.Write(cvar.VarChunkIndex, NpgsqlDbType.Integer);
+                                cvarwriter.Write(cvart.Item2, NpgsqlDbType.Integer);
+                                cvarwriter.Write(cvar.REDName, NpgsqlDbType.Text);
+                                cvarwriter.Write(cvar.REDType, NpgsqlDbType.Text);
+                                //cvarwriter.Write(cvar.REDValue, NpgsqlDbType.Text); // There are null bytes in strings...
+                                cvarwriter.Write(Encoding.Convert(iso88591, utf8, ByteArrayRocks.DeleteIn(iso88591.GetBytes(cvar.REDValue), 0x00)), NpgsqlDbType.Text);
+                            }
+                            cvarwriter.Complete();
+                        }
+                        #endregion //dump_cvar
+                        #region dump_buffers
+                        // Properties
+                        using (var internalbufferwriter = oneconn.BeginBinaryImport("COPY cr2w.buffers (file_id,flags,_index,_offset,disksize,memsize,crc32,_data) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            var buffers = acrw.buffers;
+
+                            if (acrw != crwwithembedded.First() && acrw.embedded.Count() > 0)
+                                System.Console.WriteLine($"Double embbeded found at ${crwwithembedded.First().FileName} !");
+
+                            for (int j = 0; j < buffers.Count(); j++)
+                            {
+                                var buffer = buffers[j].Buffer;
+
+                                internalbufferwriter.StartRow();
+                                internalbufferwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.flags, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.index, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.offset, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.diskSize, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.memSize, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write((int)buffer.crc32, NpgsqlDbType.Integer);
+                                internalbufferwriter.Write(buffers[j].Data, NpgsqlDbType.Bytea);
+                            }
+                            internalbufferwriter.Complete();
+                        }
+                        #endregion //dump_buffers
+                        #region dump_embedded
+                        // Embedded
+                        using (var embeddedwriter = oneconn.BeginBinaryImport("COPY cr2w.embedded (file_id,importindex,path,pathhash,dataoffset,datasize,handle) FROM STDIN (FORMAT BINARY)"))
+                        {
+                            var embedded = acrw.embedded;
+
+                            if (acrw != crwwithembedded.First() && acrw.embedded.Count()>0)
+                                System.Console.WriteLine($"Double embbeded found at ${crwwithembedded.First().FileName} !");
+
+                            for (int j = 0; j < embedded.Count(); j++)
+                            {
+                                var oneembedded = embedded[j].Embedded;
+
+                                embeddedwriter.StartRow();
+                                embeddedwriter.Write(cr2w_file_id, NpgsqlDbType.Integer);
+                                embeddedwriter.Write((int)oneembedded.importIndex, NpgsqlDbType.Integer);
+                                embeddedwriter.Write((int)oneembedded.path, NpgsqlDbType.Integer);
+                                embeddedwriter.Write((long)oneembedded.pathHash, NpgsqlDbType.Bigint);
+                                embeddedwriter.Write((int)oneembedded.dataOffset, NpgsqlDbType.Integer);
+                                embeddedwriter.Write((int)oneembedded.dataSize, NpgsqlDbType.Integer);
+                                embeddedwriter.Write(embedded[j].Handle, NpgsqlDbType.Text);
+                            }
+                            embeddedwriter.Complete();
+                        }
+                        #endregion //dump_embedded
                     }
                     oneconn.Close();
                 });
@@ -365,21 +484,27 @@ namespace WolvenKit.Console
                 //ms0.Dispose();
                 //break;
             }
+            System.Console.WriteLine("Dump done. :'-)");
             return 1;
 
 
             #region internalfunctions
-
+            // Result : A tuple mess - 1 the list of each cvar with its parent (postgres id), + 2 the update to the local cvar - postgresid dictionary
             (List<(IEditableVariable, int)>, Dictionary<IEditableVariable, int>) RecurseSerializedCvars(IEditableVariable data, Dictionary<IEditableVariable, int> cvariddict)
             {
                 var parentedcvars = new List<(IEditableVariable, int)>();
+                //The root cvariable a.k.a. chunk.data has no parent
+                parentedcvars.Add((data, -1));
+                //Begin recursion in children variables
                 LoopWrapper(data);
                 return (parentedcvars, cvariddict);
 
+                //Recurse through children variables in the level right under, and relaunch recursion below again
                 void LoopWrapper(IEditableVariable var)
                 {
                     int cvarpostgresid = Interlocked.Increment(ref globalcvarcounter);
                     cvariddict.Add(var, cvarpostgresid);
+                    //Only existing aka serialized cvars
                     List<IEditableVariable> nextl = var.GetExistingVariables(true);
                     if (nextl == null)
                         return;
@@ -437,15 +562,6 @@ namespace WolvenKit.Console
             return array == null
                 || array.Length == 0;
         }
-        /*
-                static void Main()
-                {
-                    var data = new byte[] { 23, 36, 43, 76, 125, 56, 34, 234, 12, 3, 5, 76, 8, 0, 6, 125, 234, 56, 211, 122, 22, 4, 7, 89, 76, 64, 12, 3, 5, 76, 8, 0, 6, 125 };
-                    var pattern = new byte[] { 12, 3, 5, 76, 8, 0, 6, 125 };
-
-                    foreach (var position in data.Locate(pattern))
-                        Console.WriteLine(position);
-                }*/
     }
 
 }

@@ -140,10 +140,8 @@ namespace WolvenKit.CR2W
             return null;
         }
 
-        public CR2WFileHeader GetFileHeader()
-        {
-            return m_fileheader;
-        }
+        public CR2WFileHeader GetFileHeader() => m_fileheader;
+        public CR2WTable[] GetTableHeaders() => m_tableheaders;
 
         public void CreateVariableEditor(CVariable editvar, EVariableEditorAction action)
         {
@@ -181,7 +179,14 @@ namespace WolvenKit.CR2W
 
             var parsedvar = CR2WTypeManager.Create(typename, varname, this, parent);
             // The "size" variable read is something a bit strange : it takes itself into account.
-            parsedvar.Read(file, size - 4);
+            try
+            {
+                parsedvar.Read(file, size - 4);
+            }
+            catch
+            {
+                System.Console.WriteLine("hohoho");
+            }
 
             var afterVarPos = file.BaseStream.Position;
 
@@ -189,7 +194,7 @@ namespace WolvenKit.CR2W
             if (bytesleft > 0)
             {
                 var unreadBytes = file.ReadBytes((int)bytesleft);
-                throw new InvalidParsingException($"Parsing Variable read too short. Difference: {bytesleft}");
+                //?? why not throw ?? throw new InvalidParsingException($"Parsing Variable read too short. Difference: {bytesleft}");
             }
             else if (bytesleft < 0)
             {
