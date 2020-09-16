@@ -1,8 +1,18 @@
 # Set the default behavior, in case people don't have core.autocrlf set.
 * text eol=crlf
 
-# Explicitly declare text files you want to always be normalized and converted
-# to native line endings on checkout.
-*.cs text
-*.csproj text
-*.resx text
+
+# Explicitly declare files you do not want to be treated as text
+*.bmp -text
+*.dll -text
+*.exe -text
+*.ico -text
+*.jpg -text
+*.md2 -text
+*.png -text
+*.rtf -text
+*.svg -text
+*.tga -text
+*.xbm -text
+*.zip -text
+
